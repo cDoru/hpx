@@ -273,22 +273,12 @@ namespace detail
         typedef typename base_type::completed_callback_type
             completed_callback_type;
 
-        template <typename T>
-        friend class lcos::future;
-
-        template <typename T>
-        friend struct local::channel;
-
-        friend future<Result>
-        lcos::make_error_future<Result>(boost::exception_ptr const& e);
-
-    protected:
+    public:
         future_data() {}
 
         future_data(completed_callback_type const& data_sink)
           : on_completed_(data_sink) {}
 
-    public:
         static result_type handle_error(data_type const& d, error_code &ec)
         {
             // an error has been reported in the meantime, throw or set
@@ -588,10 +578,23 @@ namespace detail
         typedef typename base_type::error_type error_type;
         typedef typename base_type::data_type data_type;
 
-        template <typename T>
-        friend class lcos::future;
+    public:
+        timed_future_data() {}
 
-    private:
+        template <typename Result_>
+        timed_future_data(boost::posix_time::ptime const& at,
+            BOOST_FWD_REF(Result_) init)
+        {
+            at_time(at, boost::forward<Result_>(init));
+        }
+
+        template <typename Result_>
+        timed_future_data(boost::posix_time::time_duration const& d,
+            BOOST_RV_REF(Result_) init)
+        {
+            at_time(d, boost::forward<Result_>(init));
+        }
+
         void set_data(result_type const& value)
         {
             this->base_type::set_data(value);
@@ -621,23 +624,6 @@ namespace detail
                 // thread scheduling failed, report error to the new future
                 this->base_type::set_exception(hpx::detail::access_exception(ec));
             }
-        }
-
-    protected:
-        timed_future_data() {}
-
-        template <typename Result_>
-        timed_future_data(boost::posix_time::ptime const& at,
-            BOOST_FWD_REF(Result_) init)
-        {
-            at_time(at, boost::forward<Result_>(init));
-        }
-
-        template <typename Result_>
-        timed_future_data(boost::posix_time::time_duration const& d,
-            BOOST_RV_REF(Result_) init)
-        {
-            at_time(d, boost::forward<Result_>(init));
         }
     };
 
