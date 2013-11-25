@@ -115,7 +115,7 @@ namespace detail
         typedef typename boost::mpl::if_<
             boost::is_same<void, Result>, util::unused_type, Result
         >::type result_type;
-        typedef HPX_STD_FUNCTION<void(lcos::future<Result>&)>
+        typedef HPX_STD_FUNCTION<void()>
             completed_callback_type;
         typedef lcos::local::spinlock mutex_type;
 
@@ -156,7 +156,7 @@ namespace detail
               : thread_id_(thread_id)
             {}
 
-            void operator()(lcos::future<Result>& /*f*/) const
+            void operator()() const
             {
                 threads::set_thread_state(
                     thread_id_, threads::pending, threads::wait_timeout);
@@ -248,11 +248,10 @@ namespace detail
 
         typedef void result_type;
 
-        template <typename Future>
-        void operator()(Future & f) const
+        void operator()() const
         {
-            if (!f1_.empty()) f1_(f);
-            if (!f2_.empty()) f2_(f);
+            if (!f1_.empty()) f1_();
+            if (!f2_.empty()) f2_();
         }
 
         typename util::remove_reference<F1>::type f1_;
@@ -371,10 +370,6 @@ namespace detail
         template <typename T>
         void set_data(BOOST_FWD_REF(T) result)
         {
-            // this future instance coincidentally keeps us alive
-            lcos::future<Result> f =
-                lcos::detail::make_future_from_data<Result>(this);
-
             // set the received result, reset error status
             try {
                typedef typename util::decay<T>::type naked_type;
@@ -403,7 +398,7 @@ namespace detail
 
                 // invoke the callback (continuation) function
                 if (!on_completed.empty())
-                    on_completed(f);
+                    on_completed();
             }
             catch (hpx::exception const&) {
                 // store the error instead
@@ -414,10 +409,6 @@ namespace detail
         // trigger the future with the given error condition
         void set_exception(boost::exception_ptr const& e)
         {
-            // this future instance coincidentally keeps us alive
-            lcos::future<Result> f =
-                lcos::detail::make_future_from_data<Result>(this);
-
             completed_callback_type on_completed;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
@@ -437,7 +428,7 @@ namespace detail
 
             // invoke the callback (continuation) function
             if (!on_completed.empty())
-                on_completed(f);
+                on_completed();
         }
 
         void set_error(error e, char const* f, char const* msg)
@@ -529,16 +520,12 @@ namespace detail
             completed_callback_type retval = boost::move(on_completed_);
 
             if (!data_sink.empty() && !data_.is_empty()) {
-                // this future instance coincidentally keeps us alive
-                lcos::future<Result> f =
-                    lcos::detail::make_future_from_data<Result>(this);
-
                 // invoke the callback (continuation) function right away
                 l.unlock();
 
                 if (!retval.empty())
-                    retval(f);
-                data_sink(f);
+                    retval();
+                data_sink();
             }
             else if (!retval.empty()) {
                 // store a combined callback wrapping the old and the new one

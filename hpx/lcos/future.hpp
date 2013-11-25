@@ -1,4 +1,5 @@
 //  Copyright (c) 2007-2013 Hartmut Kaiser
+//  Copyright (c) 2013 Agustin Berge
 //
 //  Distributed under the Boost Software License, Version 1.0. (See accompanying
 //  file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -395,7 +396,7 @@ namespace hpx { namespace lcos
 
         boost::intrusive_ptr<future_data_type> p(new future_data_type());
         p->set_data(boost::forward<Result>(init));
-        
+
         return lcos::detail::make_future_from_data<result_type>(boost::move(p));
     }
 
@@ -580,7 +581,7 @@ namespace hpx { namespace lcos
             future_data_->move_data(ec);
 
             // This resets the intrusive pointer itself, not the future_data_
-            future_data_.reset(); 
+            future_data_.reset();
         }
 
         // state introspection
@@ -680,7 +681,7 @@ namespace hpx { namespace lcos
 
         boost::intrusive_ptr<future_data_type> p(new future_data_type());
         p->set_data(util::unused);
-        
+
         return lcos::detail::make_future_from_data<void>(boost::move(p));
     }
 
