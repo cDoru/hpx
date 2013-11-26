@@ -467,23 +467,16 @@ namespace detail
             return !feb_is_empty();
         }
 
-    private:
-        static bool has_data_helper(data_type const& d)
-        {
-            return d.stores_value();
-        }
-
-    public:
         bool has_value() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !feb_is_empty() && feb_peek(&has_data_helper);
+            return !feb_is_empty() && data_.stores_value();
         }
 
         bool has_exception() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !feb_is_empty() && !feb_peek(&has_data_helper);
+            return !feb_is_empty() && data_.stores_error();
         }
 
         BOOST_SCOPED_ENUM(future_status) get_state() const
@@ -660,20 +653,6 @@ namespace detail
             feb_set_full();    // state_ = full
         }
 
-        /// \brief  Calls the supplied function passing along the stored data
-        ///         (if full)
-        ///
-        /// \param f [in] The function to be called
-        ///
-        /// \returns This function returns \a false if the FE memory is empty
-        ///          otherwise it returns the return value of \p f.
-        template <typename F>
-        bool feb_peek(F f) const
-        {
-            if (state_ == empty)
-                return false;
-            return f(data_);      // pass the data to the provided function
-        }
         // returns whether this entry is currently empty
         bool feb_is_empty() const
         {
