@@ -299,12 +299,12 @@ namespace hpx { namespace lcos
             return future_data_ && future_data_->has_exception();
         }
 
-        BOOST_SCOPED_ENUM(future_status) get_state() const
+        BOOST_SCOPED_ENUM(future_status) get_status() const
         {
             if (!future_data_)
                 return future_status::uninitialized;
 
-            return future_data_->get_state();
+            return future_data_->get_status();
         }
 
         // cancellation support
@@ -600,12 +600,12 @@ namespace hpx { namespace lcos
             return future_data_->has_exception();
         }
 
-        BOOST_SCOPED_ENUM(future_status) get_state() const
+        BOOST_SCOPED_ENUM(future_status) get_status() const
         {
             if (!future_data_)
                 return future_status::uninitialized;
 
-            return future_data_->get_state();
+            return future_data_->get_status();
         }
 
         // cancellation support

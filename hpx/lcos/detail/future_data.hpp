@@ -129,7 +129,7 @@ namespace detail
         virtual bool is_ready_locked() const = 0;
         virtual bool has_value() const = 0;
         virtual bool has_exception() const = 0;
-        virtual BOOST_SCOPED_ENUM(future_status) get_state() const = 0;
+        virtual BOOST_SCOPED_ENUM(future_status) get_status() const = 0;
 
         // cancellation is disabled by default
         virtual bool cancelable() const
@@ -284,14 +284,6 @@ namespace detail
           , on_completed_(data_sink)
         {}
 
-        ~future_data()
-        {
-            if (!read_queue_.empty()) {
-                LERR_(info) << "~full_empty_entry: read_queue is not empty";
-                log_non_empty_queue("read_queue", read_queue_);
-            }
-        }
-
         static result_type handle_error(data_type const& d, error_code &ec)
         {
             // an error has been reported in the meantime, throw or set
@@ -349,7 +341,6 @@ namespace detail
             return data_.get_value();
         }
 
-    public:
         result_type move_data(error_code& ec = throws)
         {
             // yields control if needed
@@ -479,7 +470,7 @@ namespace detail
             return !feb_is_empty() && data_.stores_error();
         }
 
-        BOOST_SCOPED_ENUM(future_status) get_state() const
+        BOOST_SCOPED_ENUM(future_status) get_status() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
             return !feb_is_empty() ? future_status::ready : future_status::deferred; //-V110
@@ -703,31 +694,6 @@ namespace detail
             queue_type& q_;
             typename queue_type::const_iterator last_;
         };
-
-        void log_non_empty_queue(char const* const desc, queue_type& queue)
-        {
-            while (!queue.empty()) {
-                threads::thread_id_type id = queue.front().id_;
-                queue.front().id_ = threads::invalid_thread_id;
-                queue.pop_front();
-
-                // we know that the id is actually the pointer to the thread
-                LERR_(info) << "~full_empty_entry: aborting pending thread in "
-                        << desc << ": "
-                        << get_thread_state_name(id->get_state())
-                        << "(" << id.get() << "): " << id->get_description();
-
-                // forcefully abort thread, do not throw
-                error_code ec(lightweight);
-                threads::set_thread_state(id, threads::pending,
-                    threads::wait_abort, threads::thread_priority_default, ec);
-                if (ec) {
-                    LERR_(error) << "~full_empty_entry: could not abort thread"
-                        << get_thread_state_name(id->get_state())
-                        << "(" << id.get() << "): " << id->get_description();
-                }
-            }
-        }
 
         queue_type read_queue_;               // threads waiting in read
         data_type data_;                      // protected data
