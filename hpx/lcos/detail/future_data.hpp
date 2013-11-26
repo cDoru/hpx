@@ -314,7 +314,7 @@ namespace detail
             data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                data_.read(d, l, ec);      // copies the data out of the store
+                full_empty_read(d, l, ec);      // copies the data out of the store
                 if (ec) return result_type();
             }
 
@@ -343,7 +343,7 @@ namespace detail
             data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                data_.move(d, l, ec); // moves the data from the store
+                full_empty_move(d, l, ec); // moves the data from the store
                 if (ec) return result_type();
             }
 
@@ -383,7 +383,7 @@ namespace detail
                     typename mutex_type::scoped_lock l(this->mtx_);
 
                     // check whether the data already has been set
-                    if (!data_.is_empty()) {
+                    if (!full_empty_is_empty()) {
                         HPX_THROW_EXCEPTION(promise_already_satisfied,
                             "packaged_task::set_data<Result>",
                             "data has already been set for this future");
@@ -392,7 +392,7 @@ namespace detail
                     on_completed = boost::move(on_completed_);
 
                     // store the value
-                    data_.set(boost::move(get_remote_result_type::call(
+                    full_empty_set(boost::move(get_remote_result_type::call(
                           boost::forward<T>(result))));
                 }
 
@@ -414,7 +414,7 @@ namespace detail
                 typename mutex_type::scoped_lock l(this->mtx_);
 
                 // check whether the data already has been set
-                if (!data_.is_empty()) {
+                if (!full_empty_is_empty()) {
                     HPX_THROW_EXCEPTION(promise_already_satisfied,
                         "packaged_task::set_data<Result>",
                         "data has already been set for this future");
@@ -423,7 +423,7 @@ namespace detail
                 on_completed = boost::move(on_completed_);
 
                 // store the error code
-                data_.set(e);
+                full_empty_set(e);
             }
 
             // invoke the callback (continuation) function
@@ -452,7 +452,7 @@ namespace detail
 
         bool is_ready_locked() const
         {
-            return !data_.is_empty();
+            return !full_empty_is_empty();
         }
 
     private:
@@ -465,19 +465,19 @@ namespace detail
         bool has_value() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !data_.is_empty() && data_.peek(&has_data_helper);
+            return !full_empty_is_empty() && full_empty_peek(&has_data_helper);
         }
 
         bool has_exception() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !data_.is_empty() && !data_.peek(&has_data_helper);
+            return !full_empty_is_empty() && !full_empty_peek(&has_data_helper);
         }
 
         BOOST_SCOPED_ENUM(future_status) get_state() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !data_.is_empty() ? future_status::ready : future_status::deferred; //-V110
+            return !full_empty_is_empty() ? future_status::ready : future_status::deferred; //-V110
         }
 
         /// Reset the promise to allow to restart an asynchronous
@@ -485,7 +485,7 @@ namespace detail
         void reset(error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            data_.set_empty(ec);
+            full_empty_set_empty(ec);
         }
 
         /// Set the callback which needs to be invoked when the future becomes
@@ -519,7 +519,7 @@ namespace detail
         {
             completed_callback_type retval = boost::move(on_completed_);
 
-            if (!data_sink.empty() && !data_.is_empty()) {
+            if (!data_sink.empty() && !full_empty_is_empty()) {
                 // invoke the callback (continuation) function right away
                 l.unlock();
 
@@ -550,7 +550,141 @@ namespace detail
         }
 
     protected:
-        detail::full_empty<data_type, lcos::local::no_mutex> data_;
+        /// \brief Atomically set the state to empty without releasing any
+        ///        waiting \a threads. This function is mainly usable for
+        ///        initialization and debugging purposes.
+        ///
+        /// \note    This function will create a new full/empty entry in the
+        ///          store if it doesn't exist yet.
+        void full_empty_set_empty(error_code& ec = throws)
+        {
+            data_.set_empty(ec);
+        }
+
+        /// \brief Atomically set the state to full without releasing any
+        ///        waiting \a threads. This function is mainly usable for
+        ///        initialization and debugging purposes.
+        ///
+        /// \note    This function will not create a new full/empty entry in
+        ///          the store if it doesn't exist yet.
+        void full_empty_set_full(error_code& ec = throws)
+        {
+            data_.set_full(ec);
+        }
+
+        /// \brief Query the current state of the memory
+        bool full_empty_is_empty() const
+        {
+            return data_.is_empty();
+        }
+
+        /// \brief  Waits for the memory to become full and then reads it,
+        ///         leaves memory in full state. If the location is empty the
+        ///         calling thread will wait (block) for another thread to call
+        ///         either the function \a set or the function \a write.
+        ///
+        /// \param ec [in,out] this represents the error status on exit,
+        ///           if this is pre-initialized to \a hpx#throws
+        ///           the function will throw on error instead. If the operation
+        ///           blocks and is aborted because the object went out of
+        ///           scope, the code \a hpx#yield_aborted is set or thrown.
+        ///
+        /// \note   When memory becomes full, all \a threads waiting for it
+        ///         to become full with a read will receive the value at once
+        ///         and will be queued to run.
+        template <typename Target, typename Lock>
+        void full_empty_read(Target& dest, Lock& l, error_code& ec = throws)
+        {
+            data_.enqueue_full_full(dest, l, ec);
+        }
+
+        /// \brief  Waits for the memory to become full and then reads (moves) it,
+        ///         leaves memory in full state. If the location is empty the
+        ///         calling thread will wait (block) for another thread to call
+        ///         either the function \a set or the function \a write.
+        ///
+        /// \param ec [in,out] this represents the error status on exit,
+        ///           if this is pre-initialized to \a hpx#throws
+        ///           the function will throw on error instead. If the operation
+        ///           blocks and is aborted because the object went out of
+        ///           scope, the code \a hpx#yield_aborted is set or thrown.
+        ///
+        /// \note   When memory becomes full, all \a threads waiting for it
+        ///         to become full with a read will receive the value at once
+        ///         and will be queued to run.
+        template <typename Target, typename Lock>
+        void full_empty_move(Target& dest, Lock& l, error_code& ec = throws)
+        {
+            return data_.enqueue_full_full_move(dest, l, ec);
+        }
+
+        /// \brief  Waits for memory to become full and then reads it, sets
+        ///         memory to empty. If the location is empty the calling
+        ///         thread will wait (block) for another thread to call either
+        ///         the function \a set or the function \a write.
+        ///
+        /// \param ec [in,out] this represents the error status on exit,
+        ///           if this is pre-initialized to \a hpx#throws
+        ///           the function will throw on error instead. If the operation
+        ///           blocks and is aborted because the object went out of
+        ///           scope, the code \a hpx#yield_aborted is set or thrown.
+        ///
+        /// \note   When memory becomes empty, only one thread blocked like this
+        ///         will be queued to run (one thread waiting in a \a write
+        ///         function).
+        template <typename Target, typename Lock>
+        void full_empty_read_and_empty(Target& dest, Lock& l, error_code& ec = throws)
+        {
+            data_.enqueue_full_empty(dest, l, ec);
+        }
+
+        /// \brief  Writes memory and atomically sets its state to full without
+        ///         waiting for it to become empty.
+        ///
+        /// \note   Even if the function itself doesn't block, setting the
+        ///         location to full using \a set might re-activate threads
+        ///         waiting on this in a \a read or \a read_and_empty function.
+        template <typename Target>
+        void full_empty_set(BOOST_FWD_REF(Target) data)
+        {
+            data_.set_and_fill(boost::forward<Target>(data));
+        }
+
+        /// \brief  Waits for memory to become empty, and then fills it. If the
+        ///         location is filled the calling thread will wait (block) for
+        ///         another thread to call the function \a read_and_empty.
+        ///
+        /// \param ec [in,out] this represents the error status on exit,
+        ///           if this is pre-initialized to \a hpx#throws
+        ///           the function will throw on error instead. If the operation
+        ///           blocks and is aborted because the object went out of
+        ///           scope, the code \a hpx#yield_aborted is set or thrown.
+        ///
+        /// \note   When memory becomes empty only one thread blocked like this
+        ///         will be queued to run.
+        template <typename Target, typename Lock>
+        void full_empty_write(BOOST_FWD_REF(Target) data, Lock& l, error_code& ec = throws)
+        {
+            data_.enqueue_if_full(boost::forward<Target>(data), l, ec);
+        }
+
+        /// \brief  Calls the supplied function passing along the stored data
+        ///         (if full)
+        ///
+        /// \param f [in] The function to be called
+        ///
+        /// \returns This function returns \a false if the FE memory is empty
+        ///          otherwise it returns the return value of \p f.
+        template <typename F>
+        bool full_empty_peek(F f) const
+        {
+            return data_.peek(f);
+        }
+
+    private:
+        full_empty_entry<data_type, lcos::local::no_mutex> data_;
+
+    protected:
         completed_callback_type on_completed_;
     };
 
