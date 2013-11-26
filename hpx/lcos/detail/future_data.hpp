@@ -286,10 +286,8 @@ namespace detail
 
         ~future_data()
         {
-            if (feb_is_used()) {
-                LERR_(info) << "~full_empty_entry: one of the queues is not empty";
-                log_non_empty_queue("write_queue", write_queue_);
-                log_non_empty_queue("read_and_empty_queue", read_and_empty_queue_);
+            if (!read_queue_.empty()) {
+                LERR_(info) << "~full_empty_entry: read_queue is not empty";
                 log_non_empty_queue("read_queue", read_queue_);
             }
         }
@@ -695,18 +693,6 @@ namespace detail
         {
             state_ = empty;
 
-            if (!write_queue_.empty()) {
-                threads::thread_id_type id = write_queue_.front().id_;
-                write_queue_.front().id_ = threads::invalid_thread_id;
-                write_queue_.pop_front();
-
-                threads::set_thread_state(id, threads::pending,
-                    threads::wait_timeout, threads::thread_priority_default, ec);
-
-                feb_set_full(ec);    // state_ = full
-                if (ec) return false;
-            }
-
             // return whether this block needs to be removed
             return state_ == full && !feb_is_used();
         }
@@ -727,21 +713,6 @@ namespace detail
                 if (ec) return false;
             }
 
-            // since we got full now we need to re-activate one thread waiting
-            // for the block to become full
-            if (!read_and_empty_queue_.empty()) {
-                threads::thread_id_type id = read_and_empty_queue_.front().id_;
-                read_and_empty_queue_.front().id_ = threads::invalid_thread_id;
-                read_and_empty_queue_.pop_front();
-
-                threads::set_thread_state(id, threads::pending,
-                    threads::wait_timeout, threads::thread_priority_default, ec);
-                if (ec) return false;
-
-                feb_set_empty(ec);   // state_ = empty
-                if (ec) return false;
-            }
-
             // return whether this block needs to be removed
             return state_ == full && !feb_is_used();
         }
@@ -749,7 +720,7 @@ namespace detail
         // returns whether this entry is still in use
         bool feb_is_used() const
         {
-            return !(write_queue_.empty() && read_and_empty_queue_.empty() && read_queue_.empty());
+            return !read_queue_.empty();
         }
 
     private:
@@ -828,8 +799,6 @@ namespace detail
             }
         }
 
-        queue_type write_queue_;              // threads waiting in write
-        queue_type read_and_empty_queue_;     // threads waiting in read_and_empty
         queue_type read_queue_;               // threads waiting in read
         data_type data_;                      // protected data
         full_empty_state state_;              // current full/empty state
