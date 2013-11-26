@@ -197,23 +197,12 @@ namespace hpx { namespace lcos { namespace detail
         typedef typename future_data_type::result_type result_type;
 
     public:
-        typedef typename future_data_type::completed_callback_type
-            completed_callback_type;
-
         // This is the component id. Every component needs to have an embedded
         // enumerator 'value' which is used by the generic action implementation
         // to associate this component with a given action.
         enum { value = components::component_promise };
 
         promise()
-        {}
-
-        promise(completed_callback_type const& data_sink)
-          : future_data_type(data_sink)
-        {}
-
-        promise(BOOST_RV_REF(completed_callback_type) data_sink)
-          : future_data_type(boost::move(data_sink))
         {}
 
         // The implementation of the component is responsible for deleting the
@@ -269,7 +258,7 @@ namespace hpx { namespace lcos { namespace detail
     private:
         friend void intrusive_ptr_release(promise* p)
         {
-            bool get_gid_was_called = 
+            bool get_gid_was_called =
                 (0 == naming::detail::get_credit_from_gid(p->gid_));
             long counter = --p->count_;
 
@@ -307,22 +296,12 @@ namespace hpx { namespace lcos { namespace detail
         typedef future_data_type::result_type result_type;
 
     public:
-        typedef future_data_type::completed_callback_type completed_callback_type;
-
         // This is the component id. Every component needs to have an embedded
         // enumerator 'value' which is used by the generic action implementation
         // to associate this component with a given action.
         enum { value = components::component_promise };
 
         promise()
-        {}
-
-        promise(completed_callback_type const& data_sink)
-          : future_data_type(data_sink)
-        {}
-
-        promise(BOOST_RV_REF(completed_callback_type) data_sink)
-          : future_data_type(boost::move(data_sink))
         {}
 
         // The implementation of the component is responsible for deleting the
@@ -378,7 +357,7 @@ namespace hpx { namespace lcos { namespace detail
     private:
         friend void intrusive_ptr_release(promise* p)
         {
-            bool get_gid_was_called = 
+            bool get_gid_was_called =
                 (0 == naming::detail::get_credit_from_gid(p->gid_));
             long counter = --p->count_;
 
@@ -483,8 +462,6 @@ namespace hpx { namespace lcos
     public:
         typedef detail::promise<Result, RemoteResult> wrapped_type;
         typedef components::managed_component<wrapped_type> wrapping_type;
-        typedef typename wrapped_type::completed_callback_type
-            completed_callback_type;
 
     public:
         /// Construct a new \a promise instance. The supplied
@@ -501,20 +478,6 @@ namespace hpx { namespace lcos
         ///               with the action as the continuation parameter).
         promise()
           : impl_(new wrapping_type(new wrapped_type())),
-            future_obtained_(false)
-        {
-            LLCO_(info) << "promise::promise(" << impl_->get_gid() << ")";
-        }
-
-        promise(completed_callback_type const& data_sink)
-          : impl_(new wrapping_type(new wrapped_type(data_sink))),
-            future_obtained_(false)
-        {
-            LLCO_(info) << "promise::promise(" << impl_->get_gid() << ")";
-        }
-
-        promise(BOOST_RV_REF(completed_callback_type) data_sink)
-          : impl_(new wrapping_type(new wrapped_type(boost::move(data_sink)))),
             future_obtained_(false)
         {
             LLCO_(info) << "promise::promise(" << impl_->get_gid() << ")";
@@ -625,7 +588,6 @@ namespace hpx { namespace lcos
     public:
         typedef detail::promise<void, util::unused_type> wrapped_type;
         typedef components::managed_component<wrapped_type> wrapping_type;
-        typedef wrapped_type::completed_callback_type completed_callback_type;
 
         /// Construct a new \a future instance. The supplied
         /// \a thread will be notified as soon as the result of the
@@ -644,20 +606,6 @@ namespace hpx { namespace lcos
             future_obtained_(false)
         {
             LLCO_(info) << "promise<void>::promise(" << impl_->get_gid() << ")";
-        }
-
-        promise(completed_callback_type const& data_sink)
-          : impl_(new wrapping_type(new wrapped_type(data_sink))),
-            future_obtained_(false)
-        {
-            LLCO_(info) << "promise::promise(" << impl_->get_gid() << ")";
-        }
-
-        promise(BOOST_RV_REF(completed_callback_type) data_sink)
-          : impl_(new wrapping_type(new wrapped_type(boost::move(data_sink)))),
-            future_obtained_(false)
-        {
-            LLCO_(info) << "promise::promise(" << impl_->get_gid() << ")";
         }
 
     protected:
