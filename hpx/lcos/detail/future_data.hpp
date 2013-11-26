@@ -327,7 +327,7 @@ namespace detail
             // yields control if needed
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                feb_read(l, ec);      // copies the data out of the store
+                feb_wait_ready(l, ec);      // copies the data out of the store
                 if (ec) return result_type();
             }
 
@@ -355,7 +355,7 @@ namespace detail
             // yields control if needed
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                feb_move(l, ec); // moves the data from the store
+                feb_wait_ready(l, ec); // moves the data from the store
                 if (ec) return result_type();
             }
 
@@ -570,7 +570,7 @@ namespace detail
         ///         to become full with a read will receive the value at once
         ///         and will be queued to run.
         template <typename Lock>
-        void feb_read(Lock& l, error_code& ec = throws)
+        void feb_wait_ready(Lock& l, error_code& ec = throws)
         {
             // block if this entry is empty
             if (state_ == empty) {
@@ -591,48 +591,7 @@ namespace detail
                     if (ec) return;
                 }
             }
-
-            if (&ec != &throws)
-                ec = make_success_code();
-        }
-
-        /// \brief  Waits for the memory to become full and then reads (moves) it,
-        ///         leaves memory in full state. If the location is empty the
-        ///         calling thread will wait (block) for another thread to call
-        ///         either the function \a set or the function \a write.
-        ///
-        /// \param ec [in,out] this represents the error status on exit,
-        ///           if this is pre-initialized to \a hpx#throws
-        ///           the function will throw on error instead. If the operation
-        ///           blocks and is aborted because the object went out of
-        ///           scope, the code \a hpx#yield_aborted is set or thrown.
-        ///
-        /// \note   When memory becomes full, all \a threads waiting for it
-        ///         to become full with a read will receive the value at once
-        ///         and will be queued to run.
-        template <typename Lock>
-        void feb_move(Lock& l, error_code& ec = throws)
-        {
-            // block if this entry is empty
-            if (state_ == empty) {
-                threads::thread_self* self = threads::get_self_ptr_checked(ec);
-                if (0 == self || ec) return;
-
-                // enqueue the request and block this thread
-                queue_entry f(threads::get_self_id());
-                read_queue_.push_back(f);
-
-                reset_queue_entry r(f, read_queue_);
-
-                {
-                    // yield this thread
-                    util::scoped_unlock<Lock> ul(l);
-                    this_thread::suspend(threads::suspended,
-                        "full_empty_entry::enqueue_full_full", ec);
-                    if (ec) return;
-                }
-            }
-
+            
             if (&ec != &throws)
                 ec = make_success_code();
         }
