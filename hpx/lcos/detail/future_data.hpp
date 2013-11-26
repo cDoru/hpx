@@ -9,6 +9,7 @@
 #include <hpx/hpx_fwd.hpp>
 #include <hpx/traits/get_remote_result.hpp>
 #include <hpx/util/move.hpp>
+#include <hpx/runtime/threads/thread_data.hpp>
 #include <hpx/runtime/threads/thread_helpers.hpp>
 #include <hpx/runtime/threads/thread_executor.hpp>
 #include <hpx/lcos/detail/full_empty_memory.hpp>
@@ -19,6 +20,7 @@
 #include <hpx/util/detail/value_or_error.hpp>
 
 #include <boost/intrusive_ptr.hpp>
+#include <boost/intrusive/slist.hpp>
 #include <boost/mpl/if.hpp>
 #include <boost/type_traits/is_same.hpp>
 #include <boost/detail/atomic_count.hpp>
@@ -273,10 +275,24 @@ namespace detail
             completed_callback_type;
 
     public:
-        future_data() {}
+        future_data()
+          : data_(), state_(empty)
+        {}
 
         future_data(completed_callback_type const& data_sink)
-          : on_completed_(data_sink) {}
+          : data_(), state_(empty)
+          , on_completed_(data_sink)
+        {}
+
+        ~future_data()
+        {
+            if (feb_is_used()) {
+                LERR_(info) << "~full_empty_entry: one of the queues is not empty";
+                log_non_empty_queue("write_queue", write_queue_);
+                log_non_empty_queue("read_and_empty_queue", read_and_empty_queue_);
+                log_non_empty_queue("read_queue", read_queue_);
+            }
+        }
 
         static result_type handle_error(data_type const& d, error_code &ec)
         {
@@ -314,7 +330,7 @@ namespace detail
             data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                full_empty_read(d, l, ec);      // copies the data out of the store
+                feb_read(d, l, ec);      // copies the data out of the store
                 if (ec) return result_type();
             }
 
@@ -343,7 +359,7 @@ namespace detail
             data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                full_empty_move(d, l, ec); // moves the data from the store
+                feb_move(d, l, ec); // moves the data from the store
                 if (ec) return result_type();
             }
 
@@ -383,7 +399,7 @@ namespace detail
                     typename mutex_type::scoped_lock l(this->mtx_);
 
                     // check whether the data already has been set
-                    if (!full_empty_is_empty()) {
+                    if (!feb_is_empty()) {
                         HPX_THROW_EXCEPTION(promise_already_satisfied,
                             "packaged_task::set_data<Result>",
                             "data has already been set for this future");
@@ -392,7 +408,7 @@ namespace detail
                     on_completed = boost::move(on_completed_);
 
                     // store the value
-                    full_empty_set(boost::move(get_remote_result_type::call(
+                    feb_set(boost::move(get_remote_result_type::call(
                           boost::forward<T>(result))));
                 }
 
@@ -414,7 +430,7 @@ namespace detail
                 typename mutex_type::scoped_lock l(this->mtx_);
 
                 // check whether the data already has been set
-                if (!full_empty_is_empty()) {
+                if (!feb_is_empty()) {
                     HPX_THROW_EXCEPTION(promise_already_satisfied,
                         "packaged_task::set_data<Result>",
                         "data has already been set for this future");
@@ -423,7 +439,7 @@ namespace detail
                 on_completed = boost::move(on_completed_);
 
                 // store the error code
-                full_empty_set(e);
+                feb_set(e);
             }
 
             // invoke the callback (continuation) function
@@ -452,7 +468,7 @@ namespace detail
 
         bool is_ready_locked() const
         {
-            return !full_empty_is_empty();
+            return !feb_is_empty();
         }
 
     private:
@@ -465,19 +481,19 @@ namespace detail
         bool has_value() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !full_empty_is_empty() && full_empty_peek(&has_data_helper);
+            return !feb_is_empty() && feb_peek(&has_data_helper);
         }
 
         bool has_exception() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !full_empty_is_empty() && !full_empty_peek(&has_data_helper);
+            return !feb_is_empty() && !feb_peek(&has_data_helper);
         }
 
         BOOST_SCOPED_ENUM(future_status) get_state() const
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return !full_empty_is_empty() ? future_status::ready : future_status::deferred; //-V110
+            return !feb_is_empty() ? future_status::ready : future_status::deferred; //-V110
         }
 
         /// Reset the promise to allow to restart an asynchronous
@@ -485,7 +501,7 @@ namespace detail
         void reset(error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            full_empty_set_empty(ec);
+            feb_set_empty(ec);
         }
 
         /// Set the callback which needs to be invoked when the future becomes
@@ -519,7 +535,7 @@ namespace detail
         {
             completed_callback_type retval = boost::move(on_completed_);
 
-            if (!data_sink.empty() && !full_empty_is_empty()) {
+            if (!data_sink.empty() && !feb_is_empty()) {
                 // invoke the callback (continuation) function right away
                 l.unlock();
 
@@ -549,35 +565,7 @@ namespace detail
             return boost::move(on_completed_);
         }
 
-    protected:
-        /// \brief Atomically set the state to empty without releasing any
-        ///        waiting \a threads. This function is mainly usable for
-        ///        initialization and debugging purposes.
-        ///
-        /// \note    This function will create a new full/empty entry in the
-        ///          store if it doesn't exist yet.
-        void full_empty_set_empty(error_code& ec = throws)
-        {
-            data_.set_empty(ec);
-        }
-
-        /// \brief Atomically set the state to full without releasing any
-        ///        waiting \a threads. This function is mainly usable for
-        ///        initialization and debugging purposes.
-        ///
-        /// \note    This function will not create a new full/empty entry in
-        ///          the store if it doesn't exist yet.
-        void full_empty_set_full(error_code& ec = throws)
-        {
-            data_.set_full(ec);
-        }
-
-        /// \brief Query the current state of the memory
-        bool full_empty_is_empty() const
-        {
-            return data_.is_empty();
-        }
-
+    private:
         /// \brief  Waits for the memory to become full and then reads it,
         ///         leaves memory in full state. If the location is empty the
         ///         calling thread will wait (block) for another thread to call
@@ -593,9 +581,33 @@ namespace detail
         ///         to become full with a read will receive the value at once
         ///         and will be queued to run.
         template <typename Target, typename Lock>
-        void full_empty_read(Target& dest, Lock& l, error_code& ec = throws)
+        void feb_read(Target& dest, Lock& l, error_code& ec = throws)
         {
-            data_.enqueue_full_full(dest, l, ec);
+            // block if this entry is empty
+            if (state_ == empty) {
+                threads::thread_self* self = threads::get_self_ptr_checked(ec);
+                if (0 == self || ec) return;
+
+                // enqueue the request and block this thread
+                queue_entry f(threads::get_self_id());
+                read_queue_.push_back(f);
+
+                reset_queue_entry r(f, read_queue_);
+
+                {
+                    // yield this thread
+                    util::scoped_unlock<Lock> ul(l);
+                    this_thread::suspend(threads::suspended,
+                        "full_empty_entry::enqueue_full_full", ec);
+                    if (ec) return;
+                }
+            }
+
+            // copy the data to the destination
+            dest = data_;
+
+            if (&ec != &throws)
+                ec = make_success_code();
         }
 
         /// \brief  Waits for the memory to become full and then reads (moves) it,
@@ -613,29 +625,33 @@ namespace detail
         ///         to become full with a read will receive the value at once
         ///         and will be queued to run.
         template <typename Target, typename Lock>
-        void full_empty_move(Target& dest, Lock& l, error_code& ec = throws)
+        void feb_move(Target& dest, Lock& l, error_code& ec = throws)
         {
-            return data_.enqueue_full_full_move(dest, l, ec);
-        }
+            // block if this entry is empty
+            if (state_ == empty) {
+                threads::thread_self* self = threads::get_self_ptr_checked(ec);
+                if (0 == self || ec) return;
 
-        /// \brief  Waits for memory to become full and then reads it, sets
-        ///         memory to empty. If the location is empty the calling
-        ///         thread will wait (block) for another thread to call either
-        ///         the function \a set or the function \a write.
-        ///
-        /// \param ec [in,out] this represents the error status on exit,
-        ///           if this is pre-initialized to \a hpx#throws
-        ///           the function will throw on error instead. If the operation
-        ///           blocks and is aborted because the object went out of
-        ///           scope, the code \a hpx#yield_aborted is set or thrown.
-        ///
-        /// \note   When memory becomes empty, only one thread blocked like this
-        ///         will be queued to run (one thread waiting in a \a write
-        ///         function).
-        template <typename Target, typename Lock>
-        void full_empty_read_and_empty(Target& dest, Lock& l, error_code& ec = throws)
-        {
-            data_.enqueue_full_empty(dest, l, ec);
+                // enqueue the request and block this thread
+                queue_entry f(threads::get_self_id());
+                read_queue_.push_back(f);
+
+                reset_queue_entry r(f, read_queue_);
+
+                {
+                    // yield this thread
+                    util::scoped_unlock<Lock> ul(l);
+                    this_thread::suspend(threads::suspended,
+                        "full_empty_entry::enqueue_full_full", ec);
+                    if (ec) return;
+                }
+            }
+
+            // move the data to the destination
+            dest = boost::move(data_);
+
+            if (&ec != &throws)
+                ec = make_success_code();
         }
 
         /// \brief  Writes memory and atomically sets its state to full without
@@ -645,27 +661,13 @@ namespace detail
         ///         location to full using \a set might re-activate threads
         ///         waiting on this in a \a read or \a read_and_empty function.
         template <typename Target>
-        void full_empty_set(BOOST_FWD_REF(Target) data)
+        void feb_set(BOOST_FWD_REF(Target) data)
         {
-            data_.set_and_fill(boost::forward<Target>(data));
-        }
+            // set the data
+            data_ = boost::forward<Target>(data);
 
-        /// \brief  Waits for memory to become empty, and then fills it. If the
-        ///         location is filled the calling thread will wait (block) for
-        ///         another thread to call the function \a read_and_empty.
-        ///
-        /// \param ec [in,out] this represents the error status on exit,
-        ///           if this is pre-initialized to \a hpx#throws
-        ///           the function will throw on error instead. If the operation
-        ///           blocks and is aborted because the object went out of
-        ///           scope, the code \a hpx#yield_aborted is set or thrown.
-        ///
-        /// \note   When memory becomes empty only one thread blocked like this
-        ///         will be queued to run.
-        template <typename Target, typename Lock>
-        void full_empty_write(BOOST_FWD_REF(Target) data, Lock& l, error_code& ec = throws)
-        {
-            data_.enqueue_if_full(boost::forward<Target>(data), l, ec);
+            // make sure the entry is full
+            feb_set_full();    // state_ = full
         }
 
         /// \brief  Calls the supplied function passing along the stored data
@@ -676,13 +678,161 @@ namespace detail
         /// \returns This function returns \a false if the FE memory is empty
         ///          otherwise it returns the return value of \p f.
         template <typename F>
-        bool full_empty_peek(F f) const
+        bool feb_peek(F f) const
         {
-            return data_.peek(f);
+            if (state_ == empty)
+                return false;
+            return f(data_);      // pass the data to the provided function
+        }
+        // returns whether this entry is currently empty
+        bool feb_is_empty() const
+        {
+            return state_ == empty;
+        }
+
+        // sets this entry to empty
+        bool feb_set_empty(error_code& ec = throws)
+        {
+            state_ = empty;
+
+            if (!write_queue_.empty()) {
+                threads::thread_id_type id = write_queue_.front().id_;
+                write_queue_.front().id_ = threads::invalid_thread_id;
+                write_queue_.pop_front();
+
+                threads::set_thread_state(id, threads::pending,
+                    threads::wait_timeout, threads::thread_priority_default, ec);
+
+                feb_set_full(ec);    // state_ = full
+                if (ec) return false;
+            }
+
+            // return whether this block needs to be removed
+            return state_ == full && !feb_is_used();
+        }
+
+        // sets this entry to full
+        bool feb_set_full(error_code& ec = throws)
+        {
+            state_ = full;
+
+            // handle all threads waiting for the block to become full
+            while (!read_queue_.empty()) {
+                threads::thread_id_type id = read_queue_.front().id_;
+                read_queue_.front().id_ = threads::invalid_thread_id;
+                read_queue_.pop_front();
+
+                threads::set_thread_state(id, threads::pending,
+                    threads::wait_timeout, threads::thread_priority_default, ec);
+                if (ec) return false;
+            }
+
+            // since we got full now we need to re-activate one thread waiting
+            // for the block to become full
+            if (!read_and_empty_queue_.empty()) {
+                threads::thread_id_type id = read_and_empty_queue_.front().id_;
+                read_and_empty_queue_.front().id_ = threads::invalid_thread_id;
+                read_and_empty_queue_.pop_front();
+
+                threads::set_thread_state(id, threads::pending,
+                    threads::wait_timeout, threads::thread_priority_default, ec);
+                if (ec) return false;
+
+                feb_set_empty(ec);   // state_ = empty
+                if (ec) return false;
+            }
+
+            // return whether this block needs to be removed
+            return state_ == full && !feb_is_used();
+        }
+
+        // returns whether this entry is still in use
+        bool feb_is_used() const
+        {
+            return !(write_queue_.empty() && read_and_empty_queue_.empty() && read_queue_.empty());
         }
 
     private:
-        full_empty_entry<data_type, lcos::local::no_mutex> data_;
+        enum full_empty_state
+        {
+            empty = false,
+            full = true
+        };
+
+        // define data structures needed for intrusive slist container used for
+        // the queues
+        struct queue_entry
+        {
+            typedef boost::intrusive::slist_member_hook<
+                boost::intrusive::link_mode<boost::intrusive::normal_link>
+            > hook_type;
+
+            queue_entry(threads::thread_id_type const& id)
+              : id_(id)
+            {}
+
+            threads::thread_id_type id_;
+            hook_type list_hook_;
+        };
+
+        typedef boost::intrusive::member_hook<
+            queue_entry, typename queue_entry::hook_type,
+            &queue_entry::list_hook_
+        > list_option_type;
+
+        typedef boost::intrusive::slist<
+            queue_entry, list_option_type,
+            boost::intrusive::cache_last<true>,
+            boost::intrusive::constant_time_size<false>
+        > queue_type;
+
+        struct reset_queue_entry
+        {
+            reset_queue_entry(queue_entry& e, queue_type& q)
+              : e_(e), q_(q), last_(q.last())
+            {}
+
+            ~reset_queue_entry()
+            {
+                if (e_.id_)
+                    q_.erase(last_);     // remove entry from queue
+            }
+
+            queue_entry& e_;
+            queue_type& q_;
+            typename queue_type::const_iterator last_;
+        };
+
+        void log_non_empty_queue(char const* const desc, queue_type& queue)
+        {
+            while (!queue.empty()) {
+                threads::thread_id_type id = queue.front().id_;
+                queue.front().id_ = threads::invalid_thread_id;
+                queue.pop_front();
+
+                // we know that the id is actually the pointer to the thread
+                LERR_(info) << "~full_empty_entry: aborting pending thread in "
+                        << desc << ": "
+                        << get_thread_state_name(id->get_state())
+                        << "(" << id.get() << "): " << id->get_description();
+
+                // forcefully abort thread, do not throw
+                error_code ec(lightweight);
+                threads::set_thread_state(id, threads::pending,
+                    threads::wait_abort, threads::thread_priority_default, ec);
+                if (ec) {
+                    LERR_(error) << "~full_empty_entry: could not abort thread"
+                        << get_thread_state_name(id->get_state())
+                        << "(" << id.get() << "): " << id->get_description();
+                }
+            }
+        }
+
+        queue_type write_queue_;              // threads waiting in write
+        queue_type read_and_empty_queue_;     // threads waiting in read_and_empty
+        queue_type read_queue_;               // threads waiting in read
+        data_type data_;                      // protected data
+        full_empty_state state_;              // current full/empty state
 
     protected:
         completed_callback_type on_completed_;
