@@ -325,14 +325,13 @@ namespace detail
         result_type get_data(error_code& ec = throws)
         {
             // yields control if needed
-            data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                feb_read(d, l, ec);      // copies the data out of the store
+                feb_read(l, ec);      // copies the data out of the store
                 if (ec) return result_type();
             }
 
-            if (d.is_empty()) {
+            if (data_.is_empty()) {
                 // the value has already been moved out of this future
                 HPX_THROWS_IF(ec, no_state,
                     "future_data::get_data",
@@ -343,25 +342,24 @@ namespace detail
             // the thread has been re-activated by one of the actions
             // supported by this promise (see \a promise::set_event
             // and promise::set_exception).
-            if (d.stores_error())
-                return handle_error(d, ec);
+            if (data_.stores_error())
+                return handle_error(data_, ec);
 
             // no error has been reported, return the result
-            return d.move_value();
+            return data_.get_value();
         }
 
     public:
         result_type move_data(error_code& ec = throws)
         {
             // yields control if needed
-            data_type d;
             {
                 typename mutex_type::scoped_lock l(this->mtx_);
-                feb_move(d, l, ec); // moves the data from the store
+                feb_move(l, ec); // moves the data from the store
                 if (ec) return result_type();
             }
 
-            if (d.is_empty()) {
+            if (data_.is_empty()) {
                 // the value has already been moved out of this future
                 HPX_THROWS_IF(ec, no_state,
                     "future_data::move_data",
@@ -372,11 +370,11 @@ namespace detail
             // the thread has been re-activated by one of the actions
             // supported by this promise (see \a promise::set_event
             // and promise::set_exception).
-            if (d.stores_error())
-                return handle_error(d, ec);
+            if (data_.stores_error())
+                return handle_error(data_, ec);
 
             // no error has been reported, return the result
-            return d.move_value();
+            return data_.move_value();
         }
 
         // helper functions for setting data (if successful) or the error (if
@@ -578,8 +576,8 @@ namespace detail
         /// \note   When memory becomes full, all \a threads waiting for it
         ///         to become full with a read will receive the value at once
         ///         and will be queued to run.
-        template <typename Target, typename Lock>
-        void feb_read(Target& dest, Lock& l, error_code& ec = throws)
+        template <typename Lock>
+        void feb_read(Lock& l, error_code& ec = throws)
         {
             // block if this entry is empty
             if (state_ == empty) {
@@ -600,9 +598,6 @@ namespace detail
                     if (ec) return;
                 }
             }
-
-            // copy the data to the destination
-            dest = data_;
 
             if (&ec != &throws)
                 ec = make_success_code();
@@ -622,8 +617,8 @@ namespace detail
         /// \note   When memory becomes full, all \a threads waiting for it
         ///         to become full with a read will receive the value at once
         ///         and will be queued to run.
-        template <typename Target, typename Lock>
-        void feb_move(Target& dest, Lock& l, error_code& ec = throws)
+        template <typename Lock>
+        void feb_move(Lock& l, error_code& ec = throws)
         {
             // block if this entry is empty
             if (state_ == empty) {
@@ -644,9 +639,6 @@ namespace detail
                     if (ec) return;
                 }
             }
-
-            // move the data to the destination
-            dest = boost::move(data_);
 
             if (&ec != &throws)
                 ec = make_success_code();
