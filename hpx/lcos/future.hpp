@@ -135,27 +135,27 @@ namespace hpx { namespace lcos
     class future
     {
     public:
-        typedef lcos::detail::future_data_base<Result> future_data_type;
+        typedef lcos::detail::future_data<Result> future_data_type;
 
     private:
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            boost::intrusive_ptr<detail::future_data_base<Result_> > const&);
+            boost::intrusive_ptr<detail::future_data<Result_> > const&);
 
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data_base<Result_> >));
+            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data<Result_> >));
 
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            detail::future_data_base<Result_>* p);
+            detail::future_data<Result_>* p);
 
         template <typename Result_>
-        friend detail::future_data_base<Result_>*
+        friend detail::future_data<Result_>*
             detail::get_future_data(lcos::future<Result_>&);
 
         template <typename Result_>
-        friend detail::future_data_base<Result_> const*
+        friend detail::future_data<Result_> const*
             detail::get_future_data(lcos::future<Result_> const&);
 
     private:
@@ -464,27 +464,27 @@ namespace hpx { namespace lcos
     class future<void>
     {
     public:
-        typedef lcos::detail::future_data_base<void> future_data_type;
+        typedef lcos::detail::future_data<void> future_data_type;
 
     private:
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            boost::intrusive_ptr<detail::future_data_base<Result_> > const&);
+            boost::intrusive_ptr<detail::future_data<Result_> > const&);
 
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data_base<Result_> >));
+            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data<Result_> >));
 
         template <typename Result_>
         friend lcos::future<Result_> detail::make_future_from_data(
-            detail::future_data_base<Result_>*);
+            detail::future_data<Result_>*);
 
         template <typename Result_>
-        friend detail::future_data_base<Result_>*
+        friend detail::future_data<Result_>*
             detail::get_future_data(lcos::future<Result_>&);
 
         template <typename Result_>
-        friend detail::future_data_base<Result_> const*
+        friend detail::future_data<Result_> const*
             detail::get_future_data(lcos::future<Result_> const&);
 
     private:
@@ -724,34 +724,34 @@ namespace hpx { namespace lcos
     {
         template <typename Result>
         inline lcos::future<Result> make_future_from_data(
-            boost::intrusive_ptr<detail::future_data_base<Result> > const& p)
+            boost::intrusive_ptr<detail::future_data<Result> > const& p)
         {
             return lcos::future<Result>(p);
         }
 
         template <typename Result>
         inline lcos::future<Result> make_future_from_data( //-V659
-            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data_base<Result> >) p)
+            BOOST_RV_REF(boost::intrusive_ptr<detail::future_data<Result> >) p)
         {
             return lcos::future<Result>(boost::move(p));
         }
 
         template <typename Result>
         inline lcos::future<Result> make_future_from_data(
-            detail::future_data_base<Result>* p)
+            detail::future_data<Result>* p)
         {
             return lcos::future<Result>(p);
         }
 
         template <typename Result>
-        inline detail::future_data_base<Result>*
+        inline detail::future_data<Result>*
             get_future_data(lcos::future<Result>& f)
         {
             return f.future_data_.get();
         }
 
         template <typename Result>
-        inline detail::future_data_base<Result> const*
+        inline detail::future_data<Result> const*
             get_future_data(lcos::future<Result> const& f)
         {
             return f.future_data_.get();
