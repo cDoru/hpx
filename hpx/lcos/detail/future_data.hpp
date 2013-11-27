@@ -124,14 +124,6 @@ namespace detail
 
         virtual void deleting_owner() {}
 
-        virtual result_type get_data(error_code& ec = throws) = 0;
-        virtual result_type move_data(error_code& ec = throws) = 0;
-        virtual bool is_ready() const = 0;
-        virtual bool is_ready_locked() const = 0;
-        virtual bool has_value() const = 0;
-        virtual bool has_exception() const = 0;
-        virtual BOOST_SCOPED_ENUM(future_status) get_status() const = 0;
-
         // cancellation is disabled by default
         virtual bool cancelable() const
         {
@@ -245,6 +237,132 @@ namespace detail
                     future_status::timeout : future_status::ready;
             }
             return future_status::ready; //-V110
+        }
+
+        /// Get the result of the requested action. This call blocks (yields
+        /// control) if the result is not ready. As soon as the result has been
+        /// returned and the waiting thread has been re-scheduled by the thread
+        /// manager the function will return.
+        ///
+        /// \param ec     [in,out] this represents the error status on exit,
+        ///               if this is pre-initialized to \a hpx#throws
+        ///               the function will throw on error instead. If the
+        ///               operation blocks and is aborted because the object
+        ///               went out of scope, the code \a hpx#yield_aborted is
+        ///               set or thrown.
+        ///
+        /// \note         If there has been an error reported (using the action
+        ///               \a base_lco#set_exception), this function will throw an
+        ///               exception encapsulating the reported error code and
+        ///               error description if <code>&ec == &throws</code>.
+        virtual data_type* get_data_ptr(error_code& ec = throws)
+        {
+            // yields control if needed
+            wait(ec);
+            if (ec) return 0;
+
+            if (data_.is_empty()) {
+                // the value has already been moved out of this future
+                HPX_THROWS_IF(ec, no_state,
+                    "future_data::get_data_ptr",
+                    "this future has no valid shared state");
+                return 0;
+            }
+
+            // the thread has been re-activated by one of the actions
+            // supported by this promise (see \a promise::set_event
+            // and promise::set_exception).
+            if (data_.stores_error())
+            {
+                // an error has been reported in the meantime, throw or set
+                // the error code
+                if (&ec == &throws) {
+                    boost::rethrow_exception(data_.get_error());
+                    // never reached
+                }
+                else {
+                    ec = make_error_code(data_.get_error());
+                }
+                return 0;
+            }
+            return &data_;
+        }
+
+        /// Get the result of the requested action. This call blocks (yields
+        /// control) if the result is not ready. As soon as the result has been
+        /// returned and the waiting thread has been re-scheduled by the thread
+        /// manager the function will return.
+        ///
+        /// \param ec     [in,out] this represents the error status on exit,
+        ///               if this is pre-initialized to \a hpx#throws
+        ///               the function will throw on error instead. If the
+        ///               operation blocks and is aborted because the object
+        ///               went out of scope, the code \a hpx#yield_aborted is
+        ///               set or thrown.
+        ///
+        /// \note         If there has been an error reported (using the action
+        ///               \a base_lco#set_exception), this function will throw an
+        ///               exception encapsulating the reported error code and
+        ///               error description if <code>&ec == &throws</code>.
+        result_type& get_data()
+        {
+            data_type* data = get_data_ptr();
+
+            // no error has been reported, return the result
+            return data->get_value();
+        }
+
+        result_type& get_data(error_code& ec)
+        {
+            data_type* data = get_data_ptr(ec);
+            if (ec)
+            {
+                static result_type default_;
+                return default_;
+            }
+
+            // no error has been reported, return the result
+            return data->get_value();
+        }
+
+        result_type move_data(error_code& ec = throws)
+        {
+            data_type* data = get_data_ptr(ec);
+            if (ec) return result_type();
+
+            // no error has been reported, return the result
+            return data->move_value();
+        }
+
+        /// Return whether or not the data is available for this
+        /// \a promise.
+        bool is_ready() const
+        {
+            typename mutex_type::scoped_lock l(mtx_);
+            return is_ready_locked();
+        }
+
+        bool is_ready_locked() const
+        {
+            return !feb_is_empty();
+        }
+
+        bool has_value() const
+        {
+            typename mutex_type::scoped_lock l(mtx_);
+            return !feb_is_empty() && data_.stores_value();
+        }
+
+        bool has_exception() const
+        {
+            typename mutex_type::scoped_lock l(mtx_);
+            return !feb_is_empty() && data_.stores_error();
+        }
+
+        BOOST_SCOPED_ENUM(future_status) get_status() const
+        {
+            typename mutex_type::scoped_lock l(mtx_);
+            return !feb_is_empty() ? future_status::ready : future_status::deferred; //-V110
         }
 
     protected:
@@ -409,84 +527,6 @@ namespace detail
           : base_type()
         {}
 
-        static result_type handle_error(data_type const& d, error_code &ec)
-        {
-            // an error has been reported in the meantime, throw or set
-            // the error code
-            if (&ec == &throws) {
-                boost::rethrow_exception(d.get_error());
-                // never reached
-            }
-            else {
-                ec = make_error_code(d.get_error());
-            }
-            return result_type();
-        }
-
-        /// Get the result of the requested action. This call blocks (yields
-        /// control) if the result is not ready. As soon as the result has been
-        /// returned and the waiting thread has been re-scheduled by the thread
-        /// manager the function will return.
-        ///
-        /// \param ec     [in,out] this represents the error status on exit,
-        ///               if this is pre-initialized to \a hpx#throws
-        ///               the function will throw on error instead. If the
-        ///               operation blocks and is aborted because the object
-        ///               went out of scope, the code \a hpx#yield_aborted is
-        ///               set or thrown.
-        ///
-        /// \note         If there has been an error reported (using the action
-        ///               \a base_lco#set_exception), this function will throw an
-        ///               exception encapsulating the reported error code and
-        ///               error description if <code>&ec == &throws</code>.
-        result_type get_data(error_code& ec = throws)
-        {
-            // yields control if needed
-            base_type::wait(ec);
-            if (ec) return result_type();
-
-            if (this->data_.is_empty()) {
-                // the value has already been moved out of this future
-                HPX_THROWS_IF(ec, no_state,
-                    "future_data::get_data",
-                    "this future has no valid shared state");
-                return result_type();
-            }
-
-            // the thread has been re-activated by one of the actions
-            // supported by this promise (see \a promise::set_event
-            // and promise::set_exception).
-            if (this->data_.stores_error())
-                return handle_error(this->data_, ec);
-
-            // no error has been reported, return the result
-            return this->data_.get_value();
-        }
-
-        result_type move_data(error_code& ec = throws)
-        {
-            // yields control if needed
-            base_type::wait(ec);
-            if (ec) return result_type();
-
-            if (this->data_.is_empty()) {
-                // the value has already been moved out of this future
-                HPX_THROWS_IF(ec, no_state,
-                    "future_data::move_data",
-                    "this future has no valid shared state");
-                return result_type();
-            }
-
-            // the thread has been re-activated by one of the actions
-            // supported by this promise (see \a promise::set_event
-            // and promise::set_exception).
-            if (this->data_.stores_error())
-                return handle_error(this->data_, ec);
-
-            // no error has been reported, return the result
-            return this->data_.move_value();
-        }
-
         // helper functions for setting data (if successful) or the error (if
         // non-successful)
         template <typename T>
@@ -562,37 +602,6 @@ namespace detail
                 // store the error code
                 set_exception(boost::current_exception());
             }
-        }
-
-        /// Return whether or not the data is available for this
-        /// \a promise.
-        bool is_ready() const
-        {
-            typename mutex_type::scoped_lock l(this->mtx_);
-            return is_ready_locked();
-        }
-
-        bool is_ready_locked() const
-        {
-            return !base_type::feb_is_empty();
-        }
-
-        bool has_value() const
-        {
-            typename mutex_type::scoped_lock l(this->mtx_);
-            return !base_type::feb_is_empty() && this->data_.stores_value();
-        }
-
-        bool has_exception() const
-        {
-            typename mutex_type::scoped_lock l(this->mtx_);
-            return !base_type::feb_is_empty() && this->data_.stores_error();
-        }
-
-        BOOST_SCOPED_ENUM(future_status) get_status() const
-        {
-            typename mutex_type::scoped_lock l(this->mtx_);
-            return !base_type::feb_is_empty() ? future_status::ready : future_status::deferred; //-V110
         }
 
         /// Reset the promise to allow to restart an asynchronous
@@ -734,6 +743,7 @@ namespace detail
 
     protected:
         typedef typename future_data<Result>::result_type result_type;
+        typedef typename future_data<Result>::data_type data_type;
 
         threads::thread_id_type get_id() const
         {
@@ -756,19 +766,11 @@ namespace detail
         {}
 
         // retrieving the value
-        result_type get_data(error_code& ec = throws)
+        virtual data_type* get_data_ptr(error_code& ec = throws)
         {
             if (!was_started())
                 this->do_run();
-            return this->future_data<Result>::get_data(ec);
-        }
-
-        // moving out the value
-        result_type move_data(error_code& ec = throws)
-        {
-            if (!was_started())
-                this->do_run();
-            return this->future_data<Result>::move_data(ec);
+            return this->future_data<Result>::get_data_ptr(ec);
         }
 
     private:

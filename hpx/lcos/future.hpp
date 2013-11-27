@@ -232,7 +232,7 @@ namespace hpx { namespace lcos
         }
 
         // retrieving the value
-        Result get() const
+        Result& get() const
         {
             if (!future_data_) {
                 HPX_THROW_EXCEPTION(no_state,
@@ -242,13 +242,14 @@ namespace hpx { namespace lcos
             return future_data_->get_data();
         }
 
-        Result get(error_code& ec) const
+        Result& get(error_code& ec) const
         {
             if (!future_data_) {
                 HPX_THROWS_IF(ec, no_state,
                     "future<Result>::get",
                     "this future has no valid shared state");
-                return Result();
+                static Result default_;
+                return default_;
             }
             return future_data_->get_data(ec);
         }
@@ -577,7 +578,6 @@ namespace hpx { namespace lcos
                     "future<void>::get",
                     "this future has no valid shared state");
             }
-
             future_data_->move_data(ec);
 
             // This resets the intrusive pointer itself, not the future_data_
