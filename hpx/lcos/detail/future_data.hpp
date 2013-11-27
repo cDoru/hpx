@@ -279,14 +279,14 @@ namespace detail
         /// ready. If the future is ready the function will be invoked
         /// immediately.
         completed_callback_type
-        set_on_completed(BOOST_RV_REF(completed_callback_type) data_sink)
+        set_on_completed(completed_callback_type data_sink)
         {
             typename mutex_type::scoped_lock l(this->mtx_);
             return set_on_completed_locked(boost::move(data_sink), l);
         }
         // note: leaves the given lock in unlocked state when returning
         completed_callback_type set_on_completed_locked(
-            BOOST_RV_REF(completed_callback_type) data_sink,
+            completed_callback_type data_sink,
             typename mutex_type::scoped_lock& l)
         {
             completed_callback_type retval = boost::move(this->on_completed_);
@@ -362,7 +362,7 @@ namespace detail
                     // yield this thread
                     util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
                     this_thread::suspend(threads::suspended,
-                        "full_empty_entry::enqueue_full_full", ec);
+                        "future_data::wait", ec);
                     if (ec) return;
                 }
             }
@@ -417,7 +417,7 @@ namespace detail
         ///               \a base_lco#set_exception), this function will throw an
         ///               exception encapsulating the reported error code and
         ///               error description if <code>&ec == &throws</code>.
-        virtual data_type* get_data_ptr(error_code& ec = throws)
+        virtual data_type* get_result_ptr(error_code& ec = throws)
         {
             // yields control if needed
             wait(ec);
@@ -426,7 +426,7 @@ namespace detail
             if (data_.is_empty()) {
                 // the value has already been moved out of this future
                 HPX_THROWS_IF(ec, no_state,
-                    "future_data::get_data_ptr",
+                    "future_data::get_result_ptr",
                     "this future has no valid shared state");
                 return 0;
             }
@@ -448,52 +448,6 @@ namespace detail
                 return 0;
             }
             return &data_;
-        }
-
-        /// Get the result of the requested action. This call blocks (yields
-        /// control) if the result is not ready. As soon as the result has been
-        /// returned and the waiting thread has been re-scheduled by the thread
-        /// manager the function will return.
-        ///
-        /// \param ec     [in,out] this represents the error status on exit,
-        ///               if this is pre-initialized to \a hpx#throws
-        ///               the function will throw on error instead. If the
-        ///               operation blocks and is aborted because the object
-        ///               went out of scope, the code \a hpx#yield_aborted is
-        ///               set or thrown.
-        ///
-        /// \note         If there has been an error reported (using the action
-        ///               \a base_lco#set_exception), this function will throw an
-        ///               exception encapsulating the reported error code and
-        ///               error description if <code>&ec == &throws</code>.
-        result_type& get_data()
-        {
-            data_type* data = get_data_ptr();
-
-            // no error has been reported, return the result
-            return data->get_value();
-        }
-
-        result_type& get_data(error_code& ec)
-        {
-            data_type* data = get_data_ptr(ec);
-            if (ec)
-            {
-                static result_type default_;
-                return default_;
-            }
-
-            // no error has been reported, return the result
-            return data->get_value();
-        }
-
-        result_type move_data(error_code& ec = throws)
-        {
-            data_type* data = get_data_ptr(ec);
-            if (ec) return result_type();
-
-            // no error has been reported, return the result
-            return data->move_value();
         }
 
         /// Return whether or not the data is available for this
@@ -737,11 +691,11 @@ namespace detail
         {}
 
         // retrieving the value
-        virtual data_type* get_data_ptr(error_code& ec = throws)
+        virtual data_type* get_result_ptr(error_code& ec = throws)
         {
             if (!was_started())
                 this->do_run();
-            return this->future_data<Result>::get_data_ptr(ec);
+            return this->get_result_ptr(ec);
         }
 
     private:

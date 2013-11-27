@@ -31,6 +31,7 @@ namespace hpx { namespace lcos { namespace detail
 
     protected:
         typedef typename future_data<ContResult>::result_type result_type;
+        typedef typename future_data<ContResult>::data_type data_type;
 
     protected:
         threads::thread_id_type get_id() const
@@ -65,25 +66,14 @@ namespace hpx { namespace lcos { namespace detail
         {}
 
         // retrieving the value
-        result_type get(error_code& ec = throws)
+        virtual data_type* get_result_ptr(error_code& ec = throws)
         {
             if (!started_) {
                 lcos::future<ContResult> f =
                     lcos::detail::make_future_from_data<ContResult>(this);
                 run(f, ec);
             }
-            return this->get_data(ec);
-        }
-
-        // moving out the value
-        result_type move(error_code& ec = throws)
-        {
-            if (!started_) {
-                lcos::future<ContResult> f =
-                    lcos::detail::make_future_from_data<ContResult>(this);
-                run(f, ec);
-            }
-            return this->move_data(ec);
+            return this->get_result_ptr(ec);
         }
 
         template <typename Result>

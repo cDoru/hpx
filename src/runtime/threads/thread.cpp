@@ -231,6 +231,10 @@ namespace hpx
         private:
             typedef lcos::detail::future_data<void>::mutex_type mutex_type;
             typedef boost::intrusive_ptr<thread_task_base> future_base_type;
+            
+        protected:
+            typedef typename future_data<void>::result_type result_type;
+            typedef typename future_data<void>::data_type data_type;
 
         public:
             thread_task_base(threads::thread_id_type const& id)
@@ -245,15 +249,9 @@ namespace hpx
             }
 
             // retrieving the value
-            void get(error_code& ec = throws)
+            virtual data_type* get_result_ptr(error_code& ec = throws)
             {
-                this->get_data(ec);
-            }
-
-            // moving out the value
-            void move(error_code& ec = throws)
-            {
-                this->move_data(ec);
+                return this->get_result_ptr(ec);
             }
 
             bool valid() const

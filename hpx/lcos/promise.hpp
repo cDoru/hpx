@@ -195,6 +195,7 @@ namespace hpx { namespace lcos { namespace detail
     protected:
         typedef lcos::detail::future_data<Result> future_data_type;
         typedef typename future_data_type::result_type result_type;
+        typedef typename future_data_type::data_type data_type;
 
     public:
         // This is the component id. Every component needs to have an embedded
@@ -230,19 +231,17 @@ namespace hpx { namespace lcos { namespace detail
             this->set_data(boost::move(result));
         }
 
-        Result get_value()
-        {
-            return this->get_data();
-        }
-
-        Result move_value()
-        {
-            return this->move_data();
-        }
-
         void set_exception(boost::exception_ptr const& e)
         {
             return this->future_data_type::set_exception(e);
+        }
+
+        Result const& get_value()
+        {
+            data_type* data = this->get_result_ptr();
+
+            // no error has been reported, return the result
+            return data->get_value();
         }
 
         void add_ref()
@@ -329,19 +328,15 @@ namespace hpx { namespace lcos { namespace detail
             set_data(boost::move(result));
         }
 
-        void get_value()
-        {
-            this->get_data();
-        }
-
-        void move_value()
-        {
-            this->move_data();
-        }
-
         void set_exception(boost::exception_ptr const& e)
         {
             return this->future_data_type::set_exception(e);
+        }
+
+        util::unused_type const& get_value()
+        {
+            this->get_result_ptr();
+            return util::unused;
         }
 
         void add_ref()

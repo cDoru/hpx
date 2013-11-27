@@ -136,6 +136,7 @@ namespace hpx { namespace lcos
     {
     public:
         typedef lcos::detail::future_data<Result> future_data_type;
+        typedef typename future_data_type::data_type data_type;
 
     private:
         template <typename Result_>
@@ -232,26 +233,36 @@ namespace hpx { namespace lcos
         }
 
         // retrieving the value
-        Result& get() const
+        Result const& get() const
         {
             if (!future_data_) {
                 HPX_THROW_EXCEPTION(no_state,
                     "future<Result>::get",
                     "this future has no valid shared state");
             }
-            return future_data_->get_data();
+
+            data_type* data = future_data_->get_result_ptr();
+
+            // no error has been reported, return the result
+            return data->get_value();
         }
 
-        Result& get(error_code& ec) const
+        Result const& get(error_code& ec) const
         {
+            static result_type default_;
+
             if (!future_data_) {
                 HPX_THROWS_IF(ec, no_state,
                     "future<Result>::get",
                     "this future has no valid shared state");
-                static Result default_;
                 return default_;
             }
-            return future_data_->get_data(ec);
+
+            data_type* data = future_data_->get_result_ptr(ec);
+            if (ec) return default_;
+
+            // no error has been reported, return the result
+            return data->get_value();
         }
 
     private:
@@ -272,16 +283,38 @@ namespace hpx { namespace lcos
         friend struct invalidate;
 
     public:
-        Result move(error_code& ec = throws)
+        Result move()
         {
             if (!future_data_) {
                 HPX_THROW_EXCEPTION(no_state,
-                    "future<Result>::get",
+                    "future<Result>::move",
                     "this future has no valid shared state");
             }
-
+            
             invalidate on_exit(*this);
-            return future_data_->move_data(ec);
+            data_type* data = future_data_->get_result_ptr();
+
+            // no error has been reported, return the result
+            return data->move_value();
+        }
+
+        Result move(error_code& ec)
+        {
+            static result_type default_;
+
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::move",
+                    "this future has no valid shared state");
+                return default_;
+            }
+            
+            invalidate on_exit(*this);
+            data_type* data = future_data_->get_result_ptr(ec);
+            if (ec) return default_;
+
+            // no error has been reported, return the result
+            return data->move_value();
         }
 
         // state introspection
@@ -465,6 +498,7 @@ namespace hpx { namespace lcos
     {
     public:
         typedef lcos::detail::future_data<void> future_data_type;
+        typedef future_data_type::data_type data_type;
 
     private:
         template <typename Result_>
@@ -568,7 +602,8 @@ namespace hpx { namespace lcos
                     "future<void>::get",
                     "this future has no valid shared state");
             }
-            future_data_->get_data(ec);
+
+            future_data_->get_result_ptr(ec);
         }
 
         void move(error_code& ec = throws)
@@ -578,7 +613,8 @@ namespace hpx { namespace lcos
                     "future<void>::get",
                     "this future has no valid shared state");
             }
-            future_data_->move_data(ec);
+            
+            future_data_->get_result_ptr(ec);
 
             // This resets the intrusive pointer itself, not the future_data_
             future_data_.reset();
