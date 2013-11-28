@@ -147,6 +147,51 @@ namespace detail
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    // define data structures needed for intrusive slist container used for
+    // the queues
+    struct queue_entry
+    {
+        typedef boost::intrusive::slist_member_hook<
+            boost::intrusive::link_mode<boost::intrusive::normal_link>
+        > hook_type;
+
+        queue_entry(threads::thread_id_type const& id)
+          : id_(id)
+        {}
+
+        threads::thread_id_type id_;
+        hook_type list_hook_;
+    };
+
+    typedef boost::intrusive::member_hook<
+        queue_entry, typename queue_entry::hook_type,
+        &queue_entry::list_hook_
+    > list_option_type;
+
+    typedef boost::intrusive::slist<
+        queue_entry, list_option_type,
+        boost::intrusive::cache_last<true>,
+        boost::intrusive::constant_time_size<false>
+    > queue_type;
+
+    struct reset_queue_entry
+    {
+        reset_queue_entry(queue_entry& e, queue_type& q)
+          : e_(e), q_(q), last_(q.last())
+        {}
+
+        ~reset_queue_entry()
+        {
+            if (e_.id_)
+                q_.erase(last_);     // remove entry from queue
+        }
+
+        queue_entry& e_;
+        queue_type& q_;
+        queue_type::const_iterator last_;
+    };
+
+    ///////////////////////////////////////////////////////////////////////////
     template <typename Result>
     struct future_data : future_data_refcnt_base
     {
@@ -224,13 +269,8 @@ namespace detail
             }
             return data_;
         }
-        
-        /// \brief  Writes memory and atomically sets its state to full without
-        ///         waiting for it to become empty.
-        ///
-        /// \note   Even if the function itself doesn't block, setting the
-        ///         location to full using \a set might re-activate threads
-        ///         waiting on this in a \a read or \a read_and_empty function.
+
+        /// Set the result of the requested action.
         template <typename Target>
         void set_result(BOOST_FWD_REF(Target) data, error_code& ec = throws)
         {
@@ -240,13 +280,14 @@ namespace detail
 
                 // check whether the data already has been set
                 if (!is_ready_locked()) {
-                    HPX_THROW_EXCEPTION(promise_already_satisfied,
+                    HPX_THROWS_IF(ec, promise_already_satisfied,
                         "future_data::set_result",
                         "data has already been set for this future");
+                    return;
                 }
 
                 on_completed = boost::move(this->on_completed_);
-                
+
                 // set the data
                 data_ = boost::forward<Target>(data);
 
@@ -254,10 +295,10 @@ namespace detail
                 state_ = full;
 
                 // handle all threads waiting for the block to become full
-                while (!read_queue_.empty()) {
-                    threads::thread_id_type id = read_queue_.front().id_;
-                    read_queue_.front().id_ = threads::invalid_thread_id;
-                    read_queue_.pop_front();
+                while (!wait_queue_.empty()) {
+                    threads::thread_id_type id = wait_queue_.front().id_;
+                    wait_queue_.front().id_ = threads::invalid_thread_id;
+                    wait_queue_.pop_front();
 
                     threads::set_thread_state(id, threads::pending,
                         threads::wait_timeout, threads::thread_priority_default, ec);
@@ -372,9 +413,9 @@ namespace detail
 
                 // enqueue the request and block this thread
                 queue_entry f(threads::get_self_id());
-                read_queue_.push_back(f);
+                wait_queue_.push_back(f);
 
-                reset_queue_entry r(f, read_queue_);
+                reset_queue_entry r(f, wait_queue_);
                 {
                     // yield this thread
                     util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
@@ -400,9 +441,9 @@ namespace detail
 
                 // enqueue the request and block this thread
                 queue_entry f(threads::get_self_id());
-                read_queue_.push_back(f);
+                wait_queue_.push_back(f);
 
-                reset_queue_entry r(f, read_queue_);
+                reset_queue_entry r(f, wait_queue_);
                 {
                     // yield this thread
                     util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
@@ -434,9 +475,9 @@ namespace detail
 
                 // enqueue the request and block this thread
                 queue_entry f(threads::get_self_id());
-                read_queue_.push_back(f);
+                wait_queue_.push_back(f);
 
-                reset_queue_entry r(f, read_queue_);
+                reset_queue_entry r(f, wait_queue_);
                 {
                     // yield this thread
                     util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
@@ -457,7 +498,7 @@ namespace detail
         }
 
         /// Return whether or not the data is available for this
-        /// \a promise.
+        /// \a future.
         bool is_ready() const
         {
             typename mutex_type::scoped_lock l(mtx_);
@@ -487,64 +528,13 @@ namespace detail
             return state_ != empty ? future_status::ready : future_status::deferred; //-V110
         }
 
-    private:
-        enum full_empty_state
-        {
-            empty = false,
-            full = true
-        };
-
-        // define data structures needed for intrusive slist container used for
-        // the queues
-        struct queue_entry
-        {
-            typedef boost::intrusive::slist_member_hook<
-                boost::intrusive::link_mode<boost::intrusive::normal_link>
-            > hook_type;
-
-            queue_entry(threads::thread_id_type const& id)
-              : id_(id)
-            {}
-
-            threads::thread_id_type id_;
-            hook_type list_hook_;
-        };
-
-        typedef boost::intrusive::member_hook<
-            queue_entry, typename queue_entry::hook_type,
-            &queue_entry::list_hook_
-        > list_option_type;
-
-        typedef boost::intrusive::slist<
-            queue_entry, list_option_type,
-            boost::intrusive::cache_last<true>,
-            boost::intrusive::constant_time_size<false>
-        > queue_type;
-
-        struct reset_queue_entry
-        {
-            reset_queue_entry(queue_entry& e, queue_type& q)
-              : e_(e), q_(q), last_(q.last())
-            {}
-
-            ~reset_queue_entry()
-            {
-                if (e_.id_)
-                    q_.erase(last_);     // remove entry from queue
-            }
-
-            queue_entry& e_;
-            queue_type& q_;
-            typename queue_type::const_iterator last_;
-        };
-
     protected:
         mutable mutex_type mtx_;
         data_type data_;                      // protected data
         completed_callback_type on_completed_;
 
     private:
-        queue_type read_queue_;               // threads waiting in read
+        queue_type wait_queue_;               // threads waiting in read
         full_empty_state state_;              // current full/empty state
     };
 
