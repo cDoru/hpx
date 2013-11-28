@@ -59,7 +59,10 @@ void test_wait_for()
     HPX_TEST(thread_state == hpx::threads::suspended);
 
     if (thread.joinable())
+    {
         thread.interrupt();
+        thread.join();
+    }
 }
 
 void test_wait_until()
@@ -80,7 +83,10 @@ void test_wait_until()
     HPX_TEST(thread_state == hpx::threads::suspended);
 
     if (thread.joinable())
+    {
         thread.interrupt();
+        thread.join();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

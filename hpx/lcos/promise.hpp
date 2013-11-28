@@ -238,10 +238,10 @@ namespace hpx { namespace lcos { namespace detail
 
         Result const& get_value(error_code& ec = throws)
         {
-            data_type* data = this->get_result_ptr();
+            data_type& data = this->get_result();
 
             // no error has been reported, return the result
-            return data->get_value();
+            return data.get_value();
         }
 
         void add_ref()
@@ -335,7 +335,7 @@ namespace hpx { namespace lcos { namespace detail
 
         util::unused_type const& get_value(error_code& ec = throws)
         {
-            this->get_result_ptr();
+            this->get_result();
             return util::unused;
         }
 
