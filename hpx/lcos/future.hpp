@@ -318,40 +318,19 @@ namespace hpx { namespace lcos
         }
 
         // state introspection
-        bool is_ready(error_code& ec = throws) const
+        bool is_ready() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->is_ready();
+            return future_data_ != 0 && future_data_->is_ready();
         }
 
-        bool has_value(error_code& ec = throws) const
+        bool has_value() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->has_value();
+            return future_data_ != 0 && future_data_->has_value();
         }
 
-        bool has_exception(error_code& ec = throws) const
+        bool has_exception() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->has_exception();
+            return future_data_ != 0 && future_data_->has_exception();
         }
 
         BOOST_SCOPED_ENUM(future_status) get_status() const
@@ -642,40 +621,19 @@ namespace hpx { namespace lcos
         }
 
         // state introspection
-        bool is_ready(error_code& ec = throws) const
+        bool is_ready() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->is_ready();
+            return future_data_ != 0 && future_data_->is_ready();
         }
 
-        bool has_value(error_code& ec = throws) const
+        bool has_value() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->has_value();
+            return future_data_ != 0 && future_data_->has_value();
         }
 
-        bool has_exception(error_code& ec = throws) const
+        bool has_exception() const
         {
-            if (!future_data_) {
-                HPX_THROWS_IF(ec, no_state,
-                    "future<Result>::is_ready",
-                    "this future has no valid shared state");
-                return false;
-            }
-
-            return future_data_->has_exception();
+            return future_data_ != 0 && future_data_->has_exception();
         }
 
         BOOST_SCOPED_ENUM(future_status) get_status() const

@@ -49,7 +49,7 @@ namespace hpx { namespace lcos
 
         virtual void set_value (BOOST_RV_REF(RemoteResult) result) = 0;
 
-        virtual result_type const& get_value() = 0;
+        virtual result_type const& get_value(error_code& ec = throws) = 0;
 
     public:
         // components must contain a typedef for wrapping_type defining the
