@@ -695,7 +695,7 @@ namespace detail
         {
             if (!was_started())
                 this->do_run();
-            return this->get_result_ptr(ec);
+            return this->future_data<Result>::get_result_ptr(ec);
         }
 
     private:

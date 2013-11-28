@@ -290,7 +290,7 @@ namespace hpx { namespace lcos
                     "future<Result>::move",
                     "this future has no valid shared state");
             }
-            
+
             invalidate on_exit(*this);
             data_type* data = future_data_->get_result_ptr();
 
@@ -308,7 +308,7 @@ namespace hpx { namespace lcos
                     "this future has no valid shared state");
                 return default_;
             }
-            
+
             invalidate on_exit(*this);
             data_type* data = future_data_->get_result_ptr(ec);
             if (ec) return default_;
@@ -318,19 +318,40 @@ namespace hpx { namespace lcos
         }
 
         // state introspection
-        bool is_ready() const
+        bool is_ready(error_code& ec = throws) const
         {
-            return future_data_ && future_data_->is_ready();
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
+            return future_data_->is_ready();
         }
 
-        bool has_value() const
+        bool has_value(error_code& ec = throws) const
         {
-            return future_data_ && future_data_->has_value();
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
+            return future_data_->has_value();
         }
 
-        bool has_exception() const
+        bool has_exception(error_code& ec = throws) const
         {
-            return future_data_ && future_data_->has_exception();
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
+            return future_data_->has_exception();
         }
 
         BOOST_SCOPED_ENUM(future_status) get_status() const
@@ -613,7 +634,7 @@ namespace hpx { namespace lcos
                     "future<void>::get",
                     "this future has no valid shared state");
             }
-            
+
             future_data_->get_result_ptr(ec);
 
             // This resets the intrusive pointer itself, not the future_data_
@@ -621,18 +642,39 @@ namespace hpx { namespace lcos
         }
 
         // state introspection
-        bool is_ready() const
+        bool is_ready(error_code& ec = throws) const
         {
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
             return future_data_->is_ready();
         }
 
-        bool has_value() const
+        bool has_value(error_code& ec = throws) const
         {
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
             return future_data_->has_value();
         }
 
-        bool has_exception() const
+        bool has_exception(error_code& ec = throws) const
         {
+            if (!future_data_) {
+                HPX_THROWS_IF(ec, no_state,
+                    "future<Result>::is_ready",
+                    "this future has no valid shared state");
+                return false;
+            }
+
             return future_data_->has_exception();
         }
 
