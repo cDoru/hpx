@@ -231,10 +231,9 @@ namespace hpx
         private:
             typedef lcos::detail::future_data<void>::mutex_type mutex_type;
             typedef boost::intrusive_ptr<thread_task_base> future_base_type;
-            
+
         protected:
             typedef typename future_data<void>::result_type result_type;
-            typedef typename future_data<void>::data_type data_type;
 
         public:
             thread_task_base(threads::thread_id_type const& id)
@@ -248,15 +247,9 @@ namespace hpx
                 }
             }
 
-            // retrieving the value
-            virtual data_type* get_result_ptr(error_code& ec = throws)
-            {
-                return this->get_result_ptr(ec);
-            }
-
             bool valid() const
             {
-                return id_ != threads::invalid_thread_id && 
+                return id_ != threads::invalid_thread_id &&
                        id_ != thread::uninitialized;
             }
 
@@ -295,7 +288,7 @@ namespace hpx
 
     lcos::future<void> thread::get_future(error_code& ec)
     {
-        if (id_ == threads::invalid_thread_id || id_ == thread::uninitialized) 
+        if (id_ == threads::invalid_thread_id || id_ == thread::uninitialized)
         {
             HPX_THROWS_IF(ec, null_thread_id, "thread::get_future",
                 "NULL thread id encountered");
@@ -362,7 +355,7 @@ namespace hpx
           : interruption_was_enabled_(interruption_enabled())
         {
             if (interruption_was_enabled_) {
-                interruption_was_enabled_ = 
+                interruption_was_enabled_ =
                     threads::set_thread_interruption_enabled(
                         threads::get_self_id(), false);
             }
