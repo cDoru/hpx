@@ -124,8 +124,8 @@ namespace detail
 
         void operator()() const
         {
-            if (!f1_.empty()) f1_();
-            if (!f2_.empty()) f2_();
+            f1_();
+            f2_();
         }
 
         typename util::remove_reference<F1>::type f1_;
@@ -136,26 +136,15 @@ namespace detail
     static BOOST_FORCEINLINE HPX_STD_FUNCTION<void()>
     compose_cb(BOOST_FWD_REF(F1) f1, BOOST_FWD_REF(F2) f2)
     {
+        if (f1.empty())
+            return boost::forward<F2>(f2);
+        else if (f2.empty())
+            return boost::forward<F1>(f1);
+
         // otherwise create a combined callback
         return compose_cb_impl<F1, F2>(
             boost::forward<F1>(f1), boost::forward<F2>(f2));
     }
-
-    ///////////////////////////////////////////////////////////////////////////
-    struct wake_thread_up
-    {
-        explicit wake_thread_up(threads::thread_id_type const& thread_id)
-          : thread_id_(thread_id)
-        {}
-
-        void operator()() const
-        {
-            threads::set_thread_state(
-                thread_id_, threads::pending, threads::wait_timeout);
-        }
-
-        threads::thread_id_type thread_id_;
-    };
 
     ///////////////////////////////////////////////////////////////////////////
     template <typename Result>
@@ -168,7 +157,7 @@ namespace detail
         typedef HPX_STD_FUNCTION<void()>
             completed_callback_type;
         typedef lcos::local::spinlock mutex_type;
-        
+
     public:
         future_data()
           : data_(), state_(empty)
@@ -282,13 +271,7 @@ namespace detail
         set_on_completed(completed_callback_type data_sink)
         {
             typename mutex_type::scoped_lock l(this->mtx_);
-            return set_on_completed_locked(boost::move(data_sink), l);
-        }
-        // note: leaves the given lock in unlocked state when returning
-        completed_callback_type set_on_completed_locked(
-            completed_callback_type data_sink,
-            typename mutex_type::scoped_lock& l)
-        {
+
             completed_callback_type retval = boost::move(this->on_completed_);
 
             if (!data_sink.empty() && !feb_is_empty()) {
@@ -321,29 +304,6 @@ namespace detail
             return boost::move(this->on_completed_);
         }
 
-        // wait support
-        struct reset_cb
-        {
-            template <typename F>
-            reset_cb(future_data& fb, BOOST_FWD_REF(F) f,
-                    typename mutex_type::scoped_lock& l)
-              : target_(fb),
-                l_(l),
-                oldcb_(fb.reset_on_completed_locked())
-            {
-                fb.set_on_completed_locked(boost::forward<F>(f), l);
-            }
-            ~reset_cb()
-            {
-                l_.lock();
-                target_.set_on_completed_locked(boost::move(oldcb_), l_);
-            }
-
-            future_data& target_;
-            typename mutex_type::scoped_lock& l_;
-            completed_callback_type oldcb_;
-        };
-
         void wait(error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
@@ -366,7 +326,7 @@ namespace detail
                     if (ec) return;
                 }
             }
-            
+
             if (&ec != &throws)
                 ec = make_success_code();
         }
@@ -375,14 +335,33 @@ namespace detail
         wait_for(boost::posix_time::time_duration const& p, error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
-            if (!is_ready_locked()) {
-                boost::intrusive_ptr<future_data> this_(this);
-                reset_cb r(*this, wake_thread_up(threads::get_self_id()), l);  // leaves 'l' unlocked
 
-                // if the timer has hit, the waiting period timed out
-                return (this_thread::suspend(p) == threads::wait_signaled) ? //-V110
-                    future_status::timeout : future_status::ready;
+            // block if this entry is empty
+            if (state_ == empty) {
+                threads::thread_self* self = threads::get_self_ptr_checked(ec);
+                if (0 == self || ec) return future_status::uninitialized;
+
+                // enqueue the request and block this thread
+                queue_entry f(threads::get_self_id());
+                read_queue_.push_back(f);
+
+                reset_queue_entry r(f, read_queue_);
+                {
+                    // yield this thread
+                    util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
+                    threads::thread_state_ex_enum const reason =
+                        this_thread::suspend(p, "future_data::wait_for", ec);
+                    if (ec) return future_status::uninitialized;
+
+                    // if the timer has hit, the waiting period timed out
+                    return (reason == threads::wait_signaled) ? //-V110
+                        future_status::timeout : future_status::ready;
+                }
             }
+
+            if (&ec != &throws)
+                ec = make_success_code();
+
             return future_status::ready; //-V110
         }
 
@@ -390,14 +369,33 @@ namespace detail
         wait_until(boost::posix_time::ptime const& at, error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
-            if (!is_ready_locked()) {
-                boost::intrusive_ptr<future_data> this_(this);
-                reset_cb r(*this, wake_thread_up(threads::get_self_id()), l);  // leaves 'l' unlocked
 
-                // if the timer has hit, the waiting period timed out
-                return (this_thread::suspend(at) == threads::wait_signaled) ? //-V110
-                    future_status::timeout : future_status::ready;
+            // block if this entry is empty
+            if (state_ == empty) {
+                threads::thread_self* self = threads::get_self_ptr_checked(ec);
+                if (0 == self || ec) return future_status::uninitialized;
+
+                // enqueue the request and block this thread
+                queue_entry f(threads::get_self_id());
+                read_queue_.push_back(f);
+
+                reset_queue_entry r(f, read_queue_);
+                {
+                    // yield this thread
+                    util::scoped_unlock<typename mutex_type::scoped_lock> ul(l);
+                    threads::thread_state_ex_enum const reason =
+                        this_thread::suspend(at, "future_data::wait_until", ec);
+                    if (ec) return future_status::uninitialized;
+
+                    // if the timer has hit, the waiting period timed out
+                    return (reason == threads::wait_signaled) ? //-V110
+                        future_status::timeout : future_status::ready;
+                }
             }
+
+            if (&ec != &throws)
+                ec = make_success_code();
+
             return future_status::ready; //-V110
         }
 
@@ -589,7 +587,7 @@ namespace detail
             queue_type& q_;
             typename queue_type::const_iterator last_;
         };
-        
+
     protected:
         mutable mutex_type mtx_;
         data_type data_;                      // protected data
