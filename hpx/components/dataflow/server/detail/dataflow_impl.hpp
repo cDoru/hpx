@@ -477,7 +477,7 @@ namespace hpx { namespace traits
             this->set_value_nonvirt(remote_result());
         }
 
-        result_type const& get_value()
+        result_type const& get_value(error_code& ec = throws)
         {
             BOOST_ASSERT(false);
             static result_type default_;
