@@ -279,7 +279,7 @@ namespace detail
                 typename mutex_type::scoped_lock l(this->mtx_);
 
                 // check whether the data already has been set
-                if (!is_ready_locked()) {
+                if (is_ready_locked()) {
                     HPX_THROWS_IF(ec, promise_already_satisfied,
                         "future_data::set_result",
                         "data has already been set for this future");
@@ -372,7 +372,7 @@ namespace detail
 
             completed_callback_type retval = boost::move(this->on_completed_);
 
-            if (!data_sink.empty() && !is_ready_locked()) {
+            if (!data_sink.empty() && is_ready_locked()) {
                 // invoke the callback (continuation) function right away
                 l.unlock();
 
@@ -653,7 +653,8 @@ namespace detail
             typename mutex_type::scoped_lock l(this->mtx_);
             if (started_) {
                 HPX_THROW_EXCEPTION(task_already_started,
-                    "task_base::check_started", "this task has already been started");
+                    "task_base::check_started",
+                    "this task has already been started");
                 return;
             }
             started_ = true;
