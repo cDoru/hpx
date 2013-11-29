@@ -279,7 +279,7 @@ namespace hpx { namespace traits
                 }
                 else
                 {
-                    BOOST_ASSERT(d.stores_value()); // This should never be empty
+                    HPX_ASSERT(d.stores_value()); // This should never be empty
 
                     typedef typename lco_type::set_value_action action_type;
                     result_type r = d.get_value();
@@ -290,10 +290,10 @@ namespace hpx { namespace traits
 
         ~dataflow_impl()
         {
-            BOOST_ASSERT(!result.is_empty());
-            BOOST_ASSERT(targets.empty());
+            HPX_ASSERT(!result.is_empty());
+            HPX_ASSERT(targets.empty());
 #if N > 0
-            BOOST_ASSERT(slots_set == slots_completed);
+            HPX_ASSERT(slots_set == slots_completed);
 #endif
             LLCO_(info)
                 << "~dataflow_impl<"
@@ -366,7 +366,7 @@ namespace hpx { namespace traits
                 }
                 else
                 {
-                    BOOST_ASSERT(d.stores_value()); // This should never be empty
+                    HPX_ASSERT(d.stores_value()); // This should never be empty
 
                     typedef typename lco_type::set_value_action action_type;
                     result_type r =  d.get_value();
@@ -479,7 +479,7 @@ namespace hpx { namespace traits
 
         result_type const& get_value(error_code& ec = throws)
         {
-            BOOST_ASSERT(false);
+            HPX_ASSERT(false);
             static result_type default_;
             return default_;
         }
@@ -495,7 +495,7 @@ namespace hpx { namespace traits
 
         naming::gid_type get_base_gid() const
         {
-            BOOST_ASSERT(back_ptr_);
+            HPX_ASSERT(back_ptr_);
             return back_ptr_->get_base_gid();
         }
 
@@ -505,8 +505,8 @@ namespace hpx { namespace traits
 
         void set_back_ptr(components::managed_component<dataflow_impl>* bp)
         {
-            BOOST_ASSERT(0 == back_ptr_);
-            BOOST_ASSERT(bp);
+            HPX_ASSERT(0 == back_ptr_);
+            HPX_ASSERT(bp);
             back_ptr_ = bp;
         }
 

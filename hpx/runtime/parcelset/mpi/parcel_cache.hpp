@@ -39,7 +39,7 @@ namespace hpx { namespace parcelset { namespace mpi { namespace detail
 
         std::size_t size() const
         {
-            BOOST_ASSERT(parcels_.size() == handlers_.size());
+            HPX_ASSERT(parcels_.size() == handlers_.size());
             return parcels_.size();
         }
 
@@ -78,11 +78,11 @@ namespace hpx { namespace parcelset { namespace mpi { namespace detail
             else if (endian_out == "big")
                 archive_flags_ |= util::endian_big;
             else {
-                BOOST_ASSERT(endian_out =="little" || endian_out == "big");
+                HPX_ASSERT(endian_out =="little" || endian_out == "big");
             }
 
             std::string array_optimization =
-                get_config_entry("hpx.parcel.array_optimization", "1");
+                get_config_entry("hpx.parcel.mpi.array_optimization", "1");
             if (boost::lexical_cast<int>(array_optimization) == 0)
                 archive_flags_ |= util::disable_array_optimization;
 

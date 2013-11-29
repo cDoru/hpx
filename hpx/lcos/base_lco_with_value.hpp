@@ -159,7 +159,7 @@ namespace hpx { namespace traits
 
         static void set(components::component_type)
         {
-            BOOST_ASSERT(false);
+            HPX_ASSERT(false);
         }
     };
 }}

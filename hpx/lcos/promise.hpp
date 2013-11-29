@@ -162,14 +162,14 @@ namespace hpx { namespace lcos { namespace detail
                 const_cast<naming::gid_type&>(this->gid_));
 
             // we request the id of a future only once
-            BOOST_ASSERT(0 != naming::detail::get_credit_from_gid(gid));
+            HPX_ASSERT(0 != naming::detail::get_credit_from_gid(gid));
 
             return naming::id_type(gid, naming::id_type::managed);
         }
 
         naming::gid_type get_base_gid() const
         {
-            BOOST_ASSERT(gid_ != naming::invalid_gid);
+            HPX_ASSERT(gid_ != naming::invalid_gid);
             return gid_;
         }
 
@@ -278,8 +278,8 @@ namespace hpx { namespace lcos { namespace detail
 
         void set_back_ptr(components::managed_component<promise>* bp)
         {
-            BOOST_ASSERT(bp);
-            BOOST_ASSERT(this->gid_ == naming::invalid_gid);
+            HPX_ASSERT(bp);
+            HPX_ASSERT(this->gid_ == naming::invalid_gid);
             this->gid_ = bp->get_base_gid();
         }
     };
@@ -373,8 +373,8 @@ namespace hpx { namespace lcos { namespace detail
 
         void set_back_ptr(components::managed_component<promise>* bp)
         {
-            BOOST_ASSERT(bp);
-            BOOST_ASSERT(gid_ == naming::invalid_gid);
+            HPX_ASSERT(bp);
+            HPX_ASSERT(gid_ == naming::invalid_gid);
             this->gid_ = bp->get_base_gid();
         }
     };
@@ -390,7 +390,7 @@ namespace hpx { namespace components
         managed_promise()
           : promise_(0)
         {
-            BOOST_ASSERT(false);        // this is never called
+            HPX_ASSERT(false);        // this is never called
         }
 
         ~managed_promise()
@@ -714,7 +714,7 @@ namespace hpx { namespace traits
 
         static void set(components::component_type t)
         {
-            BOOST_ASSERT(false);
+            HPX_ASSERT(false);
         }
     };
 

@@ -24,6 +24,92 @@
 
 #include <boost/mpl/bool.hpp>
 
+///////////////////////////////////////////////////////////////////////////////
+//
+//          Here is how our distributed garbage collection works
+//
+// Each id_type instance - while always referring to some (possibly remote)
+// entity - can either be 'managed' or 'unmanaged'. If an id_type instance is
+// 'unmanaged' it does not perform any garbage collection. Otherwise (if it's
+// 'managed'), all of its copies are globally tracked which allows to
+// automatically delete the entity a particular id_type instance is referring
+// to after the last reference to it goes out of scope.
+//
+// An id_type instance is essentially a shared_ptr<> maintaining two reference
+// counts: a local reference count and a global one. The local reference count
+// is incremented whenever the id_type instance is copied locally, and decremented
+// whenever one of the local copies goes out of scope. At the point when the last
+// local copy goes out of scope, it returns its current share of the global
+// reference count back to AGAS. The share of the global reference count owned
+// by all copies of an id_type instance on a single locality is called its
+// credit. Credits are issued in chunks which allows to create a global copy
+// of an id_type instance (like passing it to another locality) without needing
+// to talk to AGAS to request a global reference count increment. The referenced
+// entity is free'd when the global reference count falls to zero.
+//
+// Any newly created object assumes an initial credit. This credit is not
+// accounted for by AGAS as long as no global increment or decrement requests
+// are received. It is important to understand that there is no way to distingish
+// whether an object has already been deleted (and therefore no entry exists in
+// the table storing the global reference count for this object) or whether the
+// object is still alive but no increment/decrement requests have been received
+// by AGAS yet. While this is a pure optimization to avoid storing global
+// reference counts for all objects, it has implications for the implemented
+// garbage collection algorithms at large.
+//
+// As long as an id_type instance is not sent to another locality (a locality
+// different from the initial locality creating the referenced entity), all
+// lifetime management for this entity can be handled purely local without
+// even talking to AGAS.
+//
+// Sending an id_type instance to another locality (which includes using an
+// id_type as the destination for an action) splits the current credit into
+// two parts. One part stays with the id_type on the sending locality, the
+// part is sent along to the destination locality where it turns into the
+// global credit associated with the remote copy of the id_type. As stated
+// above, this allows to avoid talking to AGAS for incrementing the global
+// reference count as long as there is sufficient global credit left in order
+// to be split.
+//
+// The current share of the global credit associated with an id_type instance
+// is encoded in the bits 80..95 of the underlying gid_type. The most
+// significant bit of this bit range (bit 95) encodes whether the given id_type
+// has been split at any time. This information is needed to be able to decide
+// whether a garbage collection can be assumed to be a purely local operation.
+//
+// Credit splitting is performed without any additional AGAS traffic as long as
+// sufficient credit is available. If the credit of the id_type to be split is
+// exhausted (reaches the value '2') it has to be replenished. This operation
+// is performed asynchronously. This is done for performance reasons and to
+// avoid that an outgoing parcel has to wait for the message acknowledging
+// that AGAS has accounted for the requested credit increase. While this seems
+// to be the sensible thing to do, it can easily lead to the situation where
+// global reference count decrement requests arrive at the AGAS server before
+// the increment request.
+//
+// Note that the id_type instance staying behind is replenished independently
+// from the id_type instance which is sent along to the destination. The former
+// is replenished at the sending locality, while the latter is replenished upon
+// receive at the destination locality.
+//
+// Replenishing the credit for an id_type instance is performed by:
+//
+//   a) asynchronously sending an increment request to AGAS
+//   b) adding the requested credit to the local instance
+//   c) asynchronously keeping the local instance alive until the request
+//      is acknowledged by AGAS
+//   d) making sure that none of the requested credits is given back to
+//      AGAS before the request was acknowledged (only at that point it is
+//      guaranteed that the decrement request is received after the increment
+//      request)
+//
+// It is the last item (d) which is the most difficult to implement. This is
+// because part of the requested credit may already have been split again and
+// sent to any of the other localities.
+//
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
 namespace hpx { namespace naming { namespace detail
 {
     struct gid_serialization_data;
@@ -58,7 +144,7 @@ namespace hpx { namespace naming
                 try {
                     // decrement global reference count for the given gid,
                     boost::int32_t credits = detail::get_credit_from_gid(*p);
-                    BOOST_ASSERT(0 != credits);
+                    HPX_ASSERT(0 != credits);
 
                     if (get_runtime_ptr())
                     {
@@ -68,11 +154,9 @@ namespace hpx { namespace naming
                     }
                 }
                 catch (hpx::exception const& e) {
-                    if (e.get_error() != thread_interrupted) {
-                        LTM_(error)
-                            << "Unhandled exception while executing decrement_refcnt:"
-                            << e.what();
-                    }
+                    LTM_(error)
+                        << "Unhandled exception while executing decrement_refcnt:"
+                        << e.what();
                 }
             }
             else {
@@ -80,7 +164,7 @@ namespace hpx { namespace naming
                 // that the referenced object is fully local.
                 components::component_type t = addr.type_;
 
-                BOOST_ASSERT(t != components::component_invalid);
+                HPX_ASSERT(t != components::component_invalid);
 
                 // Third parameter is the count of how many components to destroy.
                 // FIXME: The address should still be in the cache, but it could
@@ -151,7 +235,7 @@ namespace hpx { namespace naming
             case managed:
                 return &detail::gid_managed_deleter;
             default:
-                BOOST_ASSERT(false);          // invalid management type
+                HPX_ASSERT(false);          // invalid management type
                 return &detail::gid_unmanaged_deleter;
             }
             return 0;
@@ -198,15 +282,15 @@ namespace hpx { namespace naming
                     const_cast<id_type_impl&>(*this));
 
                 // none of the ids should be left without credits
-                BOOST_ASSERT(detail::get_credit_from_gid(*this) != 0);
-                BOOST_ASSERT(detail::get_credit_from_gid(newid) != 0);
+                HPX_ASSERT(detail::get_credit_from_gid(*this) != 0);
+                HPX_ASSERT(detail::get_credit_from_gid(newid) != 0);
 
                 // We now add new credits to the id which is left behind only.
                 // The credit for the newid will be handled upon arrival
                 // on the destination node.
                 if (1 == detail::get_credit_from_gid(newid))
                 {
-                    BOOST_ASSERT(detail::get_credit_from_gid(*this) >= 1);
+                    HPX_ASSERT(detail::get_credit_from_gid(*this) >= 1);
 
                     // note: the future returned by retrieve_new_credits()
                     //       keeps this instance alive as it is passed along
@@ -218,7 +302,7 @@ namespace hpx { namespace naming
                 return newid;
             }
 
-            BOOST_ASSERT(unmanaged == type_);
+            HPX_ASSERT(unmanaged == type_);
             return *this;
         }
 
@@ -361,7 +445,7 @@ namespace hpx { namespace naming
     ///////////////////////////////////////////////////////////////////////////
     inline naming::id_type get_colocation_id_sync(naming::id_type const& id, error_code& ec)
     {
-        // FIXME: Resolve the locality instead of deducing it from the target 
+        // FIXME: Resolve the locality instead of deducing it from the target
         //        GID, otherwise this will break once we start moving objects.
         boost::uint32_t locality_id = get_locality_id_from_gid(id.get_gid());
         return get_id_from_locality_id(locality_id);
