@@ -136,7 +136,6 @@ namespace hpx { namespace lcos
     {
     public:
         typedef lcos::detail::future_data<Result> future_data_type;
-        typedef typename future_data_type::data_type data_type;
 
     private:
         template <typename Result_>
@@ -241,6 +240,7 @@ namespace hpx { namespace lcos
                     "this future has no valid shared state");
             }
 
+            typedef typename future_data_type::data_type data_type;
             data_type& data = future_data_->get_result();
 
             // no error has been reported, return the result
@@ -258,6 +258,7 @@ namespace hpx { namespace lcos
                 return default_;
             }
 
+            typedef typename future_data_type::data_type data_type;
             data_type& data = future_data_->get_result(ec);
             if (ec) return default_;
 
@@ -292,6 +293,8 @@ namespace hpx { namespace lcos
             }
 
             invalidate on_exit(*this);
+
+            typedef typename future_data_type::data_type data_type;
             data_type& data = future_data_->get_result();
 
             // no error has been reported, return the result
@@ -310,6 +313,8 @@ namespace hpx { namespace lcos
             }
 
             invalidate on_exit(*this);
+
+            typedef typename future_data_type::data_type data_type;
             data_type& data = future_data_->get_result(ec);
             if (ec) return default_;
 

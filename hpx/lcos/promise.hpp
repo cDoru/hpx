@@ -195,7 +195,6 @@ namespace hpx { namespace lcos { namespace detail
     protected:
         typedef lcos::detail::future_data<Result> future_data_type;
         typedef typename future_data_type::result_type result_type;
-        typedef typename future_data_type::data_type data_type;
 
     public:
         // This is the component id. Every component needs to have an embedded
@@ -238,6 +237,7 @@ namespace hpx { namespace lcos { namespace detail
 
         Result const& get_value(error_code& ec = throws)
         {
+            typedef typename future_data_type::data_type data_type;
             data_type& data = this->get_result();
 
             // no error has been reported, return the result
