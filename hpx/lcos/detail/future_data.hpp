@@ -402,7 +402,7 @@ namespace detail
             return boost::move(this->on_completed_);
         }
 
-        void wait(error_code& ec = throws)
+        virtual void wait(error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
 
@@ -429,7 +429,7 @@ namespace detail
                 ec = make_success_code();
         }
 
-        BOOST_SCOPED_ENUM(future_status)
+        virtual BOOST_SCOPED_ENUM(future_status)
         wait_for(boost::posix_time::time_duration const& p, error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
@@ -463,7 +463,7 @@ namespace detail
             return future_status::ready; //-V110
         }
 
-        BOOST_SCOPED_ENUM(future_status)
+        virtual BOOST_SCOPED_ENUM(future_status)
         wait_until(boost::posix_time::ptime const& at, error_code& ec = throws)
         {
             typename mutex_type::scoped_lock l(mtx_);
@@ -632,13 +632,34 @@ namespace detail
         // retrieving the value
         virtual data_type& get_result(error_code& ec = throws)
         {
-            if (!was_started())
+            if (!started_test_and_set())
                 this->do_run();
             return this->future_data<Result>::get_result(ec);
         }
 
+        // wait support
+        virtual void wait(error_code& ec = throws)
+        {
+            if (!started_test_and_set())
+                this->do_run();
+            else
+                this->future_data<Result>::wait(ec);
+        }
+
+        virtual BOOST_SCOPED_ENUM(future_status)
+        wait_for(boost::posix_time::time_duration const& p, error_code& ec = throws)
+        {
+            return future_status::deferred; //-V110
+        }
+
+        virtual BOOST_SCOPED_ENUM(future_status)
+        wait_until(boost::posix_time::ptime const& at, error_code& ec = throws)
+        {
+            return future_status::deferred; //-V110
+        };
+
     private:
-        bool was_started()
+        bool started_test_and_set()
         {
             typename mutex_type::scoped_lock l(this->mtx_);
             if (started_)
