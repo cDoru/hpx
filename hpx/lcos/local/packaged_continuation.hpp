@@ -373,7 +373,7 @@ namespace hpx { namespace lcos { namespace local
             typename lcos::detail::future_traits<OuterFuture>::type>::type
         unwrap(OuterFuture& outer)
         {
-            typedef typename OuterFuture outer_future_type;
+            typedef OuterFuture outer_future_type;
             typedef typename lcos::detail::future_traits<OuterFuture>::type inner_future_type;
             typedef typename lcos::detail::future_traits<inner_future_type>::type result_type;
 
