@@ -411,15 +411,6 @@ namespace hpx { namespace lcos
         typename detail::unwrapped_future_result<Result>::type
         unwrap(error_code& ec = throws);
 
-    private:
-        template <typename InnerResult, typename UnwrapResult>
-        void on_inner_ready(future<InnerResult>& inner,
-            boost::intrusive_ptr<lcos::detail::future_data<UnwrapResult> > p);
-
-        template <typename UnwrapResult>
-        void on_outer_ready(
-            boost::intrusive_ptr<lcos::detail::future_data<UnwrapResult> > p);
-
     protected:
         boost::intrusive_ptr<future_data_type> future_data_;
     };
@@ -603,9 +594,10 @@ namespace hpx { namespace lcos
         void get(error_code& ec = throws) const
         {
             if (!future_data_) {
-                HPX_THROW_EXCEPTION(no_state,
+                HPX_THROWS_IF(ec, no_state,
                     "future<void>::get",
                     "this future has no valid shared state");
+                return;
             }
 
             future_data_->get_result(ec);
@@ -614,9 +606,10 @@ namespace hpx { namespace lcos
         void move(error_code& ec = throws)
         {
             if (!future_data_) {
-                HPX_THROW_EXCEPTION(no_state,
+                HPX_THROWS_IF(ec, no_state,
                     "future<void>::get",
                     "this future has no valid shared state");
+                return;
             }
 
             future_data_->get_result(ec);
