@@ -100,7 +100,7 @@ namespace hpx { namespace lcos
 
         ///////////////////////////////////////////////////////////////////////
         template <typename Result>
-        struct unwrapped_future_result
+        struct future_unwrap_result
           : boost::mpl::if_<traits::is_future<Result>, Result, void>
         {};
 
@@ -408,7 +408,7 @@ namespace hpx { namespace lcos
             return wait_for(util::to_time_duration(rel_time));
         }
 
-        typename detail::unwrapped_future_result<Result>::type
+        typename detail::future_unwrap_result<Result>::type
         unwrap(error_code& ec = throws);
 
     protected:
