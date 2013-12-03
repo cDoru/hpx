@@ -331,6 +331,13 @@ namespace hpx { namespace lcos { namespace local
         }
         
         ///////////////////////////////////////////////////////////////////////
+        template <typename OuterFuture>
+        struct unwrap_result
+        {
+            typedef typename lcos::detail::future_traits<OuterFuture>::type inner_future_type;
+            typedef typename lcos::detail::future_traits<inner_future_type>::type type;
+        };
+
         template <typename InnerFuture, typename UnwrapResult>
         void unwrap_on_inner_ready(InnerFuture& inner,
             boost::intrusive_ptr<lcos::detail::future_data<UnwrapResult> > p)
@@ -369,11 +376,10 @@ namespace hpx { namespace lcos { namespace local
         }
 
         template <typename OuterFuture>
-        typename lcos::detail::future_unwrap_result<
-            typename lcos::detail::future_traits<OuterFuture>::type>::type
+        boost::intrusive_ptr<lcos::detail::future_data<
+            typename unwrap_result<OuterFuture>::type>>
         unwrap(OuterFuture& outer)
         {
-            typedef OuterFuture outer_future_type;
             typedef typename lcos::detail::future_traits<OuterFuture>::type inner_future_type;
             typedef typename lcos::detail::future_traits<inner_future_type>::type result_type;
 
@@ -383,15 +389,15 @@ namespace hpx { namespace lcos { namespace local
 
             // Bind an on_completed handler to this future which will wait for
             // the inner future and will transfer its result to the new future.
-            void (*outer_ready)(outer_future_type&,
+            void (*outer_ready)(OuterFuture&,
                 boost::intrusive_ptr<future_data_type>) =
-                    &unwrap_on_outer_ready<outer_future_type, result_type>;
+                    &unwrap_on_outer_ready<OuterFuture, result_type>;
 
             lcos::detail::future_data<inner_future_type>* future_data =
                 lcos::detail::get_future_data(outer);
             future_data->set_on_completed(util::bind(outer_ready, outer, p));
 
-            return lcos::detail::make_future_from_data<result_type>(boost::move(p));
+            return boost::move(p);
         }
     }
 
@@ -654,6 +660,9 @@ namespace hpx { namespace lcos
     {
         BOOST_STATIC_ASSERT_MSG(
             traits::is_future<Result>::value, "invalid use of unwrap");
+        
+        typedef typename lcos::detail::future_traits<Result>::type result_type;
+        typedef lcos::detail::future_data<result_type> future_data_type;
 
         if (!valid()) {
             HPX_THROWS_IF(ec, no_state,
@@ -662,7 +671,9 @@ namespace hpx { namespace lcos
             return future<result_type>();
         }
 
-        return lcos::local::detail::unwrap(*this);
+        boost::intrusive_ptr<future_data_type> future_data =
+            lcos::local::detail::unwrap(*this);
+        return lcos::detail::make_future_from_data<result_type>(future_data);
     }
 }}
 
